@@ -3,8 +3,8 @@ package com.arman.messmanager.data.repository
 import com.arman.messmanager.data.model.Deposit
 import com.arman.messmanager.data.remote.firebase.FirestoreCollections
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.Timestamp
 import kotlinx.coroutines.tasks.await
-import java.time.LocalDate
 
 // Reads and writes Deposit documents for a mess. Approving a deposit a member submitted
 // themselves (a separate future self-service flow) would need its own review step, but
@@ -20,16 +20,15 @@ class DepositRepository(
     suspend fun getDeposits(messId: String): List<Deposit> =
         deposits.whereEqualTo("messId", messId).get().await().toObjects(Deposit::class.java)
 
-    suspend fun addDeposit(messId: String, userId: String, amount: Double, approvedByUid: String): Deposit {
+    suspend fun addDeposit(messId: String, userId: String, amount: Double): Deposit {
         val doc = deposits.document()
         val deposit = Deposit(
             depositId = doc.id,
             messId = messId,
-            userId = userId,
+            memberUid = userId,
             amount = amount,
-            date = LocalDate.now().toString(),
-            approved = true,
-            approvedByUid = approvedByUid
+            date = Timestamp.now(),
+            status = "approved"
         )
         doc.set(deposit).await()
         return deposit
