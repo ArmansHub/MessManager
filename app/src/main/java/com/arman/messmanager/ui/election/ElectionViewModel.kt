@@ -19,7 +19,7 @@ data class CandidateOption(val uid: String, val name: String)
 data class ElectionUiState(
     val isLoading: Boolean = true,
     val hasActivePoll: Boolean = false,
-    val targetMonthId: String = "",
+    val title: String = "",
     val candidates: List<CandidateOption> = emptyList(),
     // The signed-in member's own current picks, or null if they haven't voted for that
     // role yet. Used to highlight the selected row on each ballot.
@@ -80,7 +80,7 @@ class ElectionViewModel(
             _uiState.value = ElectionUiState(
                 isLoading = false,
                 hasActivePoll = true,
-                targetMonthId = poll.targetMonthId,
+                title = poll.title,
                 candidates = candidates,
                 myVote = poll.votesMap[uid],
                 voteCounts = voteCounts

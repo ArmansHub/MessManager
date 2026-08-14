@@ -63,11 +63,11 @@ class SuperAdminDashboardFragment : Fragment() {
             findNavController().navigate(R.id.action_superAdminDashboardFragment_to_manageMembersFragment)
         }
         binding.rowGoToMemberDashboard.setOnClickListener {
-            findNavController().navigate(R.id.action_superAdminDashboardFragment_to_memberDashboardFragment)
+            // findNavController().navigate(R.id.action_superAdminDashboardFragment_to_memberDashboardFragment)
         }
         binding.rowTriggerElection.setOnClickListener { onTriggerElectionTapped() }
         binding.rowMessSettings.setOnClickListener {
-            findNavController().navigate(R.id.action_superAdminDashboardFragment_to_messSetupFragment)
+            // findNavController().navigate(R.id.action_superAdminDashboardFragment_to_messSetupFragment)
         }
         binding.rowPostNotice.setOnClickListener { showPostNoticeDialog() }
         binding.rowAssignRoles.setOnClickListener { onAssignRolesTapped() }
@@ -130,19 +130,19 @@ class SuperAdminDashboardFragment : Fragment() {
         // Trigger Manager Elections status - shown once a poll is open, so the Super
         // Admin can see it's in progress instead of tapping the row again expecting
         // something to happen.
-        val activeMonth = state.activeElectionTargetMonthId
-        binding.tvElectionStatus.isVisible = activeMonth != null
-        binding.tvElectionStatus.text = activeMonth?.let { "Election open for ${formatMonth(it)}" }
+        val activeTitle = state.activeElectionTitle
+        binding.tvElectionStatus.isVisible = activeTitle != null
+        binding.tvElectionStatus.text = activeTitle
     }
 
     // Confirms before creating a poll (it immediately becomes visible/votable by every
     // member), or explains why the row didn't do anything if one is already open.
     private fun onTriggerElectionTapped() {
-        val activeMonth = viewModel.uiState.value.activeElectionTargetMonthId
-        if (activeMonth != null) {
+        val activeTitle = viewModel.uiState.value.activeElectionTitle
+        if (activeTitle != null) {
             Toast.makeText(
                 requireContext(),
-                "An election for ${formatMonth(activeMonth)} is already open",
+                "An election is already open: $activeTitle",
                 Toast.LENGTH_SHORT
             ).show()
             return
