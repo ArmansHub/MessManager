@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/loginFragment">
+
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.arman.messmanager.ui.auth.LoginFragment"
+        android:label="Login"
+        tools:layout="@layout/fragment_login">
+
+        <action
+            android:id="@+id/action_loginFragment_to_registerFragment"
+            app:destination="@id/registerFragment" />
+
+        <action
+            android:id="@+id/action_loginFragment_to_messSetupFragment"
+            app:destination="@id/messSetupFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_loginFragment_to_pendingApprovalFragment"
+            app:destination="@id/pendingApprovalFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/registerFragment"
+        android:name="com.arman.messmanager.ui.auth.RegisterFragment"
+        android:label="Register"
+        tools:layout="@layout/fragment_register">
+
+        <action
+            android:id="@+id/action_registerFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/loginFragment"
+            app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_registerFragment_to_messSetupFragment"
+            app:destination="@id/messSetupFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/messSetupFragment"
+        android:name="com.arman.messmanager.ui.messsetup.MessSetupFragment"
+        android:label="Mess Setup"
+        tools:layout="@layout/fragment_mess_setup">
+
+        <action
+            android:id="@+id/action_messSetupFragment_to_superAdminDashboardFragment"
+            app:destination="@id/superAdminDashboardFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_messSetupFragment_to_pendingApprovalFragment"
+            app:destination="@id/pendingApprovalFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_messSetupFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/pendingApprovalFragment"
+        android:name="com.arman.messmanager.ui.pendingapproval.PendingApprovalFragment"
+        android:label="Pending Approval"
+        tools:layout="@layout/fragment_pending_approval">
+
+        <action
+            android:id="@+id/action_pendingApprovalFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/superAdminDashboardFragment"
+        android:name="com.arman.messmanager.ui.dashboard.superadmin.SuperAdminDashboardFragment"
+        android:label="Super Admin Dashboard"
+        tools:layout="@layout/fragment_superadmin_dashboard">
+
+        <action
+            android:id="@+id/action_superAdminDashboardFragment_to_manageMembersFragment"
+            app:destination="@id/manageMembersFragment" />
+
+        <action
+            android:id="@+id/action_superAdminDashboardFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/manageMembersFragment"
+        android:name="com.arman.messmanager.ui.managemembers.ManageMembersFragment"
+        android:label="Manage Members"
+        tools:layout="@layout/fragment_manage_members" />
+
+    <fragment
+        android:id="@+id/financeManagerDashboardFragment"
+        android:name="com.arman.messmanager.ui.dashboard.financemanager.FinanceManagerDashboardFragment"
+        android:label="Finance Manager Dashboard"
+        tools:layout="@layout/fragment_financemanager_dashboard">
+
+        <action
+            android:id="@+id/action_financeManagerDashboardFragment_to_electionFragment"
+            app:destination="@id/electionFragment" />
+
+        <action
+            android:id="@+id/action_financeManagerDashboardFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_financeManagerDashboardFragment_to_specialMealPollFragment"
+            app:destination="@id/specialMealPollFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/mealManagerDashboardFragment"
+        android:name="com.arman.messmanager.ui.dashboard.mealmanager.MealManagerDashboardFragment"
+        android:label="Meal Manager Dashboard"
+        tools:layout="@layout/fragment_mealmanager_dashboard">
+
+        <action
+            android:id="@+id/action_mealManagerDashboardFragment_to_electionFragment"
+            app:destination="@id/electionFragment" />
+
+        <action
+            android:id="@+id/action_mealManagerDashboardFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_mealManagerDashboardFragment_to_specialMealPollFragment"
+            app:destination="@id/specialMealPollFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/memberDashboardFragment"
+        android:name="com.arman.messmanager.ui.dashboard.member.MemberDashboardFragment"
+        android:label="Member Dashboard"
+        tools:layout="@layout/fragment_member_dashboard">
+
+        <action
+            android:id="@+id/action_memberDashboardFragment_to_electionFragment"
+            app:destination="@id/electionFragment" />
+
+        <action
+            android:id="@+id/action_memberDashboardFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+
+        <action
+            android:id="@+id/action_memberDashboardFragment_to_specialMealPollFragment"
+            app:destination="@id/specialMealPollFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/electionFragment"
+        android:name="com.arman.messmanager.ui.election.ElectionFragment"
+        android:label="Manager Election"
+        tools:layout="@layout/fragment_election" />
+
+    <fragment
+        android:id="@+id/specialMealPollFragment"
+        android:name="com.arman.messmanager.ui.specialmealpoll.SpecialMealPollFragment"
+        android:label="Special Meal Polls"
+        tools:layout="@layout/fragment_special_meal_poll" />
+
+</navigation>
