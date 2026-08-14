@@ -62,7 +62,7 @@ class DashboardFragment : Fragment() {
             if (state.myBalance < 500) { // Red Zone threshold
                 binding.personalCard.setCardBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_light))
             } else {
-                defaultCardColor?.let { binding.personalCard.cardBackgroundColor = it }
+                defaultCardColor?.let { binding.personalCard.setCardBackgroundColor(it) }
             }
 
             pendingDepositAdapter.submitList(state.pendingDeposits)
