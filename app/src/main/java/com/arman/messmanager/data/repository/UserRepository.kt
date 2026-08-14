@@ -11,15 +11,18 @@ import kotlinx.coroutines.tasks.await
 class UserRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
-    suspend fun getUser(uid: String): User? =
-        firestore.collection(FirestoreCollections.USERS).document(uid).get().await()
+    suspend fun getUser(uid: String): User? {
+        if (uid.isBlank()) return null
+        return firestore.collection(FirestoreCollections.USERS).document(uid).get().await()
             // toObject() maps the Firestore document fields onto our User data class.
             .toObject(User::class.java)
+    }
 
     // Writes (or overwrites) one user's profile document. Used once "Profile Setup"
     // (SRS section 4) is built - the temporary dummy-mess code in AuthViewModel also
     // uses this to create a test profile right after registration.
     suspend fun createUser(user: User) {
+        if (user.uid.isBlank()) return
         firestore.collection(FirestoreCollections.USERS).document(user.uid).set(user).await()
     }
 
@@ -38,6 +41,7 @@ class UserRepository(
     // auth account remain, but they are effectively "kicked" and would need a new
     // invite code to join another mess.
     suspend fun removeMember(uid: String) {
+        if (uid.isBlank()) return
         firestore.collection(FirestoreCollections.USERS).document(uid)
             .update("messId", null)
             .await()
@@ -45,6 +49,7 @@ class UserRepository(
 
     // Manually sets a user's role. Used by the Super Admin's "Assign Roles" control.
     suspend fun setRole(uid: String, role: UserRole) {
+        if (uid.isBlank()) return
         firestore.collection(FirestoreCollections.USERS).document(uid)
             .update("role", role)
             .await()
