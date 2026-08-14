@@ -43,7 +43,7 @@ data class MemberDashboardUiState(
 // One notice as shown on this screen - just enough to render a card. timestamp is left
 // raw (epoch millis) so the Fragment formats it, same split every other screen here uses
 // between ViewModel data and Fragment display formatting (e.g. formatMonth()).
-data class NoticeOption(val message: String, val authorName: String, val timestamp: Long)
+data class NoticeOption(val title: String, val content: String, val authorName: String, val timestamp: Long)
 
 class MemberDashboardViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
@@ -101,12 +101,13 @@ class MemberDashboardViewModel(
             // scale" trade-off ElectionViewModel makes for candidate names.
             val notices = user.messId?.let { noticeRepository.getNotices(it) }.orEmpty()
             val noticeOptions = notices.map { notice ->
-                val authorName = userRepository.getUser(notice.authorUid)
+                val authorName = userRepository.getUser(notice.postedBy)
                     ?.name?.ifBlank { null } ?: "A mess manager"
                 NoticeOption(
-                    message = notice.message,
+                    title = notice.title,
+                    content = notice.content,
                     authorName = authorName,
-                    timestamp = notice.timestamp
+                    timestamp = notice.date
                 )
             }
 

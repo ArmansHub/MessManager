@@ -188,12 +188,12 @@ class FinanceManagerDashboardViewModel(
 
     // "Post Notice" (SRS section 9, Admins and Managers only): puts a message on the
     // Digital Notice Board every mess member sees read-only on their own dashboard.
-    fun postNotice(message: String) {
+    fun postNotice(title: String, message: String) {
         val currentMessId = messId ?: return
         val uid = authRepository.currentUser?.uid ?: return
 
         viewModelScope.launch {
-            noticeRepository.postNotice(currentMessId, uid, message)
+            noticeRepository.postNotice(currentMessId, uid, title, message)
         }
     }
 
@@ -312,8 +312,9 @@ class FinanceManagerDashboardViewModel(
         // member winning the role they already hold is treated the same as anyone else
         // winning it for the first time by the demote/promote pass below.
         val activePoll = electionPollRepository.getActivePoll(currentMessId)
-        val financeWinnerUid = activePoll?.let { tallyVotes(it.financeManagerVotes) }
-        val mealWinnerUid = activePoll?.let { tallyVotes(it.mealManagerVotes) }
+        // TODO: With generic polls, manager election and role rotation needs a new implementation.
+        val financeWinnerUid: String? = null
+        val mealWinnerUid: String? = null
 
         // Step 5: archive the month before touching any member document, so a crash or
         // Firestore failure partway through the balance/role updates below still leaves
@@ -342,9 +343,8 @@ class FinanceManagerDashboardViewModel(
         // land on top of a stale balance from before this function started.
         memberSummaries.forEach { memberSummary ->
             val member = members.first { it.uid == memberSummary.uid }
-            val newRole = resolveRole(member, financeWinnerUid, mealWinnerUid)
             userRepository.createUser(
-                member.copy(balance = memberSummary.closingBalance, role = newRole)
+                member.copy(balance = memberSummary.closingBalance)
             )
         }
 
@@ -359,43 +359,10 @@ class FinanceManagerDashboardViewModel(
 
         return CloseMonthState.Success(
             closedMonthId = monthId,
-            newFinanceManagerName = financeWinnerUid?.let { uid -> members.firstOrNull { it.uid == uid }?.name },
-            newMealManagerName = mealWinnerUid?.let { uid -> members.firstOrNull { it.uid == uid }?.name }
+            newFinanceManagerName = null,
+            newMealManagerName = null
         )
     }
-
-    // The Super Admin is never touched by an election result - the SRS only rotates the
-    // Finance/Meal Manager seats. Guarding this here means it doesn't matter that
-    // SuperAdminDashboardViewModel.triggerElection() currently nominates every approved
-    // member (including the Super Admin) as an eligible candidate.
-    //
-    // A null winner for a role means "nobody voted on that ballot" - NOT "vacate the
-    // seat". Only demote an incumbent when someone else actually won their role; a role
-    // with zero votes leaves its current holder untouched, matching the Fragment's
-    // "current managers stay in place" messaging when nothing was actually decided.
-    private fun resolveRole(
-        member: User,
-        financeWinnerUid: String?,
-        mealWinnerUid: String?
-    ): UserRole {
-        if (member.role == UserRole.SUPER_ADMIN) return UserRole.SUPER_ADMIN
-        return when {
-            member.uid == financeWinnerUid -> UserRole.FINANCE_MANAGER
-            member.uid == mealWinnerUid -> UserRole.MEAL_MANAGER
-            member.role == UserRole.FINANCE_MANAGER && financeWinnerUid != null -> UserRole.MEMBER
-            member.role == UserRole.MEAL_MANAGER && mealWinnerUid != null -> UserRole.MEMBER
-            else -> member.role
-        }
-    }
-
-    // Most-voted candidate for one ballot (financeManagerVotes or mealManagerVotes).
-    // Ties break on uid so the result is deterministic instead of depending on Map
-    // iteration order. Null if nobody voted, in which case the outgoing manager simply
-    // isn't replaced (see resolveRole).
-    private fun tallyVotes(votes: Map<String, String>): String? =
-        votes.values.groupingBy { it }.eachCount().entries
-            .maxWithOrNull(compareBy<Map.Entry<String, Int>> { it.value }.thenByDescending { it.key })
-            ?.key
 
     // Called after the Fragment reacts to a terminal Close Month state (Success/Error),
     // so the same state doesn't get handled twice (e.g. on a configuration change).

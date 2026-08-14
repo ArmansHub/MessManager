@@ -33,7 +33,7 @@ data class SuperAdminDashboardUiState(
     // currently open for this mess; otherwise the "yyyy-MM" month it's electing next
     // month's managers for - used to show status and stop a second poll being triggered
     // while one is already in progress.
-    val activeElectionTargetMonthId: String? = null
+    val activeElectionTitle: String? = null
 )
 
 // Standard MVVM data flow for this screen:
@@ -107,7 +107,7 @@ class SuperAdminDashboardViewModel(
                 activeManagers = activeManagers,
                 personalBalance = user.balance,
                 personalMealsOnCount = countMealsOn(todaysMeals),
-                activeElectionTargetMonthId = activePoll?.targetMonthId
+                activeElectionTitle = activePoll?.title
             )
         }
     }
@@ -115,11 +115,11 @@ class SuperAdminDashboardViewModel(
     // "Trigger Manager Elections" (SRS section 3): opens a new poll for next month's
     // Finance and Meal Manager, nominating every currently approved member as an
     // eligible candidate. Does nothing if a poll is already open - the Fragment is
-    // expected to only call this when activeElectionTargetMonthId is null, but this
+    // expected to only call this when activeElectionTitle is null, but this
     // guard keeps the ViewModel correct even if that check is ever bypassed.
     fun triggerElection() {
         val currentMessId = messId ?: return
-        if (_uiState.value.activeElectionTargetMonthId != null) return
+        if (_uiState.value.activeElectionTitle != null) return
 
         viewModelScope.launch {
             val approvedMembers = userRepository.getUsersForMess(currentMessId)
@@ -128,8 +128,8 @@ class SuperAdminDashboardViewModel(
 
             electionPollRepository.createPoll(
                 messId = currentMessId,
-                targetMonthId = targetMonthId,
-                eligibleCandidateUids = approvedMembers.map { it.uid }
+                title = "Manager Election for $targetMonthId",
+                options = approvedMembers.map { it.uid }
             )
 
             // Reload so the new poll's status (and any other totals that may have
@@ -140,12 +140,12 @@ class SuperAdminDashboardViewModel(
 
     // "Post Notice" (SRS section 9, Admins and Managers only): puts a message on the
     // Digital Notice Board every mess member sees read-only on their own dashboard.
-    fun postNotice(message: String) {
+    fun postNotice(title: String, message: String) {
         val currentMessId = messId ?: return
         val uid = authRepository.currentUser?.uid ?: return
 
         viewModelScope.launch {
-            noticeRepository.postNotice(currentMessId, uid, message)
+            noticeRepository.postNotice(currentMessId, uid, title, message)
         }
     }
 

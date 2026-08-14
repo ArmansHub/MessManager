@@ -3,9 +3,8 @@ package com.arman.messmanager.data.model
 data class ElectionPoll(
     val pollId: String = "",
     val messId: String = "",
-    val targetMonthId: String = "",
-    val eligibleCandidateUids: List<String> = emptyList(),
-    val financeManagerVotes: Map<String, String> = emptyMap(),
-    val mealManagerVotes: Map<String, String> = emptyMap(),
-    val closed: Boolean = false
+    val title: String = "",
+    val options: List<String> = emptyList(),
+    val votesMap: Map<String, String> = emptyMap(), // voterUid -> option
+    val status: String = "open" // "open" or "closed"
 )

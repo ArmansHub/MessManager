@@ -19,16 +19,17 @@ class NoticeRepository(
     suspend fun getNotices(messId: String): List<Notice> =
         notices.whereEqualTo("messId", messId).get().await()
             .toObjects(Notice::class.java)
-            .sortedByDescending { it.timestamp }
+            .sortedByDescending { it.date }
 
-    suspend fun postNotice(messId: String, authorUid: String, message: String): Notice {
+    suspend fun postNotice(messId: String, authorUid: String, title: String, content: String): Notice {
         val doc = notices.document()
         val notice = Notice(
             noticeId = doc.id,
             messId = messId,
-            authorUid = authorUid,
-            message = message,
-            timestamp = System.currentTimeMillis()
+            postedBy = authorUid,
+            title = title,
+            content = content,
+            date = System.currentTimeMillis()
         )
         doc.set(notice).await()
         return notice

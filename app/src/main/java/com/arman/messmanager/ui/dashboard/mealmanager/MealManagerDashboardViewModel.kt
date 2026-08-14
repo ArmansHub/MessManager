@@ -128,12 +128,12 @@ class MealManagerDashboardViewModel(
 
     // "Post Notice" (SRS section 9, Admins and Managers only): puts a message on the
     // Digital Notice Board every mess member sees read-only on their own dashboard.
-    fun postNotice(message: String) {
+    fun postNotice(title: String, message: String) {
         val currentMessId = messId ?: return
         val uid = authRepository.currentUser?.uid ?: return
 
         viewModelScope.launch {
-            noticeRepository.postNotice(currentMessId, uid, message)
+            noticeRepository.postNotice(currentMessId, uid, title, message)
         }
     }
 }
