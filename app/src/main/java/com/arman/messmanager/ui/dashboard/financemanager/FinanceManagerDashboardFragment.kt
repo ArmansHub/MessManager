@@ -302,7 +302,7 @@ class FinanceManagerDashboardFragment : Fragment() {
                 if (message.isEmpty()) {
                     Toast.makeText(requireContext(), "Enter a message", Toast.LENGTH_SHORT).show()
                 } else {
-                    viewModel.postNotice(message)
+                    viewModel.postNotice(message, message)
                     Toast.makeText(requireContext(), "Notice posted", Toast.LENGTH_SHORT).show()
                 }
             }

@@ -13,6 +13,7 @@ import androidx.fragment.app.viewModels
 import com.arman.messmanager.R
 import com.arman.messmanager.databinding.FragmentDashboardBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.util.Locale
 
 class DashboardFragment : Fragment() {
 
@@ -100,18 +101,31 @@ class DashboardFragment : Fragment() {
     }
 
     private fun showAddFixedBillDialog() {
-        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_fixed_bill, null)
-        val descriptionEditText = dialogView.findViewById<EditText>(R.id.descriptionEditText)
-        val amountEditText = dialogView.findViewById<EditText>(R.id.amountEditText)
+        val billTypes = com.arman.messmanager.data.model.FixedBillType.entries.toTypedArray()
+        val billTypeNames = billTypes.map { it.name.replace('_', ' ').lowercase(Locale.getDefault()).replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() } }.toTypedArray()
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Add Fixed Bill")
-            .setView(dialogView)
+            .setTitle("Select Bill Type")
+            .setItems(billTypeNames) { _, index ->
+                showFixedBillAmountDialog(billTypes[index])
+            }
+            .show()
+    }
+
+    private fun showFixedBillAmountDialog(type: com.arman.messmanager.data.model.FixedBillType) {
+        val input = EditText(requireContext())
+        input.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        val padding = (19 * resources.displayMetrics.density).toInt()
+        input.setPadding(padding, input.paddingTop, padding, input.paddingBottom)
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Add ${type.name} Bill")
+            .setMessage("Enter the amount for this bill.")
+            .setView(input)
             .setPositiveButton("Add") { _, _ ->
-                val description = descriptionEditText.text.toString()
-                val amount = amountEditText.text.toString().toDoubleOrNull()
-                if (amount != null && amount > 0 && description.isNotBlank()) {
-                    viewModel.addFixedBill(amount, description)
+                val amount = input.text.toString().toDoubleOrNull()
+                if (amount != null && amount > 0) {
+                    viewModel.addFixedBill(amount, type)
                 }
             }
             .setNegativeButton("Cancel", null)

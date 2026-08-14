@@ -1,6 +1,7 @@
 package com.arman.messmanager.data.repository
 
 import com.arman.messmanager.data.model.User
+import com.arman.messmanager.data.model.UserRole
 import com.arman.messmanager.data.remote.firebase.FirestoreCollections
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await

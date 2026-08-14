@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 // Everything the Finance Manager Dashboard needs to draw itself. One plain data class
 // is enough here too, same reasoning as MemberDashboardUiState: this screen displays
@@ -121,10 +123,11 @@ class FinanceManagerDashboardViewModel(
 
         // Pending Approvals: every deposit a member has submitted that the Finance
         // Manager hasn't approved yet, regardless of which month it was submitted in.
-        val pendingApprovalsCount = deposits.count { !it.approved }
+        val pendingApprovalsCount = deposits.count { it.status == "pending" }
 
+        val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneId.systemDefault())
         val monthlyApprovedDeposits = deposits
-            .filter { it.approved && it.date.startsWith(monthId) }
+            .filter { it.status == "approved" && timestampFormatter.format(it.date.toDate().toInstant()) == monthId }
             .sumOf { it.amount }
         val monthlyBazaarCost = bazaarEntries
             .filter { it.date.startsWith(monthId) }
@@ -178,10 +181,11 @@ class FinanceManagerDashboardViewModel(
     // Called from the "Add Fixed Bill" dialog.
     fun addFixedBill(type: FixedBillType, amount: Double) {
         val currentMessId = messId ?: return
+        val uid = authRepository.currentUser?.uid ?: return
 
         viewModelScope.launch {
             val monthId = currentMonthId(currentMessId)
-            fixedBillRepository.addFixedBill(currentMessId, monthId, type, amount)
+            fixedBillRepository.addFixedBill(currentMessId, monthId, type, amount, uid)
             refreshStats(currentMessId)
         }
     }
@@ -204,10 +208,9 @@ class FinanceManagerDashboardViewModel(
     // in the current month.
     fun logDeposit(userId: String, amount: Double) {
         val currentMessId = messId ?: return
-        val approvedByUid = authRepository.currentUser?.uid ?: return
 
         viewModelScope.launch {
-            depositRepository.addDeposit(currentMessId, userId, amount, approvedByUid)
+            depositRepository.addDeposit(currentMessId, userId, amount)
             refreshStats(currentMessId)
         }
     }
@@ -244,8 +247,9 @@ class FinanceManagerDashboardViewModel(
         // repository methods the live dashboards already use - Close Month doesn't
         // introduce a second source of truth for what "this month" contains.
         val members = userRepository.getUsersForMess(currentMessId).filter { it.joinApproved }
+        val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneId.systemDefault())
         val deposits = depositRepository.getDeposits(currentMessId)
-            .filter { it.approved && it.date.startsWith(monthId) }
+            .filter { it.status == "approved" && timestampFormatter.format(it.date.toDate().toInstant()) == monthId }
         val bazaarEntries = bazaarEntryRepository.getBazaarEntries(currentMessId)
             .filter { it.date.startsWith(monthId) }
         val fixedBills = fixedBillRepository.getFixedBills(currentMessId, monthId)
@@ -286,7 +290,7 @@ class FinanceManagerDashboardViewModel(
         val memberSummaries = members.map { member ->
             val personalMeals = mealEntries.filter { it.userId == member.uid }.sumOf { it.count }
             val mealCost = personalMeals * mealRate
-            val personalDeposits = deposits.filter { it.userId == member.uid }.sumOf { it.amount }
+            val personalDeposits = deposits.filter { it.memberUid == member.uid }.sumOf { it.amount }
             val specialCost = linkedBazaarEntries.sumOf { entry ->
                 val participants = participantsByPollId[entry.linkedPollId].orEmpty()
                 if (member.uid in participants) entry.amount / participants.size.coerceAtLeast(1) else 0.0

@@ -102,7 +102,7 @@ class MemberDashboardFragment : Fragment() {
         container.removeAllViews()
         notices.forEach { notice ->
             val row = ItemNoticeRowBinding.inflate(layoutInflater, container, false)
-            row.tvNoticeMessage.text = notice.message
+            row.tvNoticeMessage.text = notice.content
             row.tvNoticeMeta.text = "Posted by ${notice.authorName} · ${formatTimestamp(notice.timestamp)}"
             container.addView(row.root)
         }

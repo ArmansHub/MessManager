@@ -61,30 +61,24 @@ class ElectionFragment : Fragment() {
         binding.progressBar.isVisible = state.isLoading
         binding.tvNoActivePoll.isVisible = !state.isLoading && !state.hasActivePoll
         binding.sectionFinanceManager.isVisible = state.hasActivePoll
-        binding.sectionMealManager.isVisible = state.hasActivePoll
+        binding.sectionMealManager.isVisible = false // Only one ballot now
 
         binding.tvSubtitle.text = when {
             state.isLoading -> "Checking for an open election…"
-            state.hasActivePoll -> "Vote for ${formatMonth(state.targetMonthId)}'s managers"
+            state.hasActivePoll -> state.title
             else -> "No election is currently open"
         }
 
         renderBallot(
             binding.containerFinanceCandidates,
             state.candidates,
-            state.myFinanceManagerVote,
-            state.financeManagerVoteCounts
+            state.myVote,
+            state.voteCounts
         ) { uid ->
-            viewModel.voteFinanceManager(uid)
+            viewModel.vote(uid)
         }
-        renderBallot(
-            binding.containerMealCandidates,
-            state.candidates,
-            state.myMealManagerVote,
-            state.mealManagerVoteCounts
-        ) { uid ->
-            viewModel.voteMealManager(uid)
-        }
+        // Clear the second ballot container
+        binding.containerMealCandidates.removeAllViews()
     }
 
     // Rebuilds one ballot's rows from scratch on every state update - simple and correct

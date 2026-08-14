@@ -18,7 +18,7 @@ class InventoryItemRepository(
 
     suspend fun addItem(messId: String, name: String): InventoryItem {
         val doc = inventoryItems.document()
-        val item = InventoryItem(itemId = doc.id, messId = messId, name = name)
+        val item = InventoryItem(itemId = doc.id, messId = messId, itemName = name)
         doc.set(item).await()
         return item
     }
