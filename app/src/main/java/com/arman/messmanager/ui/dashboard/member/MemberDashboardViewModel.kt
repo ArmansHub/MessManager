@@ -101,8 +101,12 @@ class MemberDashboardViewModel(
             // scale" trade-off ElectionViewModel makes for candidate names.
             val notices = user.messId?.let { noticeRepository.getNotices(it) }.orEmpty()
             val noticeOptions = notices.map { notice ->
-                val authorName = userRepository.getUser(notice.postedBy)
-                    ?.name?.ifBlank { null } ?: "A mess manager"
+                val authorName = if (notice.postedBy.isNotBlank()) {
+                    userRepository.getUser(notice.postedBy)
+                        ?.name?.ifBlank { null } ?: "A mess manager"
+                } else {
+                    "A mess manager"
+                }
                 NoticeOption(
                     title = notice.title,
                     content = notice.content,
