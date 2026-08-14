@@ -8,6 +8,7 @@ import com.google.firebase.Timestamp
 import com.arman.messmanager.data.remote.firebase.FirestoreCollections
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import java.text.SimpleDateFormat
 import java.util.*
 
 class FinanceRepository {
@@ -25,10 +26,11 @@ class FinanceRepository {
 
     suspend fun getBazaarForMonth(messId: String, month: Date): List<BazaarEntry> {
         val (start, end) = getMonthStartEnd(month)
+        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         return bazaarCollection
             .whereEqualTo("messId", messId)
-            .whereGreaterThanOrEqualTo("date", start)
-            .whereLessThanOrEqualTo("date", end)
+            .whereGreaterThanOrEqualTo("date", formatter.format(start))
+            .whereLessThanOrEqualTo("date", formatter.format(end))
             .get().await().toObjects(BazaarEntry::class.java)
     }
 
