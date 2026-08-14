@@ -16,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.arman.messmanager.R
+import com.arman.messmanager.data.model.UserRole
 import com.arman.messmanager.data.repository.AuthRepository
 import com.arman.messmanager.databinding.FragmentSuperadminDashboardBinding
 import kotlinx.coroutines.launch
@@ -63,6 +64,9 @@ class SuperAdminDashboardFragment : Fragment() {
         }
         binding.rowTriggerElection.setOnClickListener { onTriggerElectionTapped() }
         binding.rowPostNotice.setOnClickListener { showPostNoticeDialog() }
+        binding.rowAssignRoles.setOnClickListener { onAssignRolesTapped() }
+        binding.rowRemoveMember.setOnClickListener { onRemoveMemberTapped() }
+        binding.rowDeleteMess.setOnClickListener { onDeleteMessTapped() }
         binding.tvSignOut.setOnClickListener { signOut() }
 
         // Same safe-collection pattern used on every other screen: repeatOnLifecycle
@@ -72,6 +76,33 @@ class SuperAdminDashboardFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state -> render(state) }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.adminActionState.collect { state ->
+                    when (state) {
+                        is AdminActionState.Idle -> { /* Do nothing */ }
+                        is AdminActionState.Loading -> {
+                            // In a real app, show a loading dialog
+                            binding.progressBar.isVisible = true
+                        }
+                        is AdminActionState.Success -> {
+                            binding.progressBar.isVisible = false
+                            Toast.makeText(requireContext(), state.message, Toast.LENGTH_SHORT).show()
+                            if (state.message.contains("Mess deleted")) {
+                                findNavController().navigate(R.id.action_superAdminDashboardFragment_to_loginFragment)
+                            }
+                            viewModel.resetAdminActionState()
+                        }
+                        is AdminActionState.Error -> {
+                            binding.progressBar.isVisible = false
+                            Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
+                            viewModel.resetAdminActionState()
+                        }
+                    }
+                }
             }
         }
     }
@@ -140,10 +171,76 @@ class SuperAdminDashboardFragment : Fragment() {
                 if (message.isEmpty()) {
                     Toast.makeText(requireContext(), "Enter a message", Toast.LENGTH_SHORT).show()
                 } else {
-                    viewModel.postNotice(message)
+                    // The previous version of this dialog was missing the title field.
+                    // For now, we'll just pass the message as the title too.
+                    viewModel.postNotice(message, message)
                     Toast.makeText(requireContext(), "Notice posted", Toast.LENGTH_SHORT).show()
                 }
             }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun onAssignRolesTapped() {
+        val roles = arrayOf("Finance Manager", "Meal Manager")
+        val userRoles = arrayOf(UserRole.FINANCE_MANAGER, UserRole.MEAL_MANAGER)
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Assign Role")
+            .setItems(roles) { _, which ->
+                showMemberSelectionDialogForRole(userRoles[which])
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showMemberSelectionDialogForRole(role: UserRole) {
+        val members = viewModel.uiState.value.messMembers
+        if (members.isEmpty()) {
+            Toast.makeText(requireContext(), "No other members to assign roles to.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val memberNames = members.map { it.name }.toTypedArray()
+
+        val roleName = role.name.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }
+        AlertDialog.Builder(requireContext())
+            .setTitle("Select Member for $roleName")
+            .setItems(memberNames) { _, which ->
+                val selectedMember = members[which]
+                viewModel.assignRole(selectedMember.uid, role)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun onRemoveMemberTapped() {
+        val members = viewModel.uiState.value.messMembers
+        if (members.isEmpty()) {
+            Toast.makeText(requireContext(), "No members to remove.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val memberNames = members.map { it.name }.toTypedArray()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Remove Member")
+            .setItems(memberNames) { _, which ->
+                val selectedMember = members[which]
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Confirm Removal")
+                    .setMessage("Are you sure you want to remove ${selectedMember.name} from the mess?")
+                    .setPositiveButton("Remove") { _, _ -> viewModel.removeMember(selectedMember.uid) }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun onDeleteMessTapped() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("DELETE MESS")
+            .setMessage("This action is irreversible and will delete all data associated with this mess. Are you absolutely sure?")
+            .setPositiveButton("DELETE") { _, _ -> viewModel.deleteMess() }
             .setNegativeButton("Cancel", null)
             .show()
     }

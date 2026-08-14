@@ -55,4 +55,10 @@ class MessRepository(
 
     private fun generateInviteCode(): String =
         (1..6).map { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".random(Random) }.joinToString("")
+
+    // Deletes the entire mess document. This is a destructive and irreversible action.
+    // It should only be called after all members have been removed from the mess.
+    suspend fun deleteMess(messId: String) {
+        messes.document(messId).delete().await()
+    }
 }

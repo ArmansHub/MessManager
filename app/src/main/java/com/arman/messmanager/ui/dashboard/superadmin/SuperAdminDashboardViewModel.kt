@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arman.messmanager.data.model.MealEntry
 import com.arman.messmanager.data.model.MealType
+import com.arman.messmanager.data.model.User
 import com.arman.messmanager.data.model.UserRole
 import com.arman.messmanager.data.repository.AuthRepository
 import com.arman.messmanager.data.repository.ElectionPollRepository
 import com.arman.messmanager.data.repository.MealEntryRepository
+import com.arman.messmanager.data.repository.MessRepository
 import com.arman.messmanager.data.repository.NoticeRepository
 import com.arman.messmanager.data.repository.UserRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +18,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+
+// One mess member as offered in the "Remove Member" or "Assign Role" dialogs.
+data class MemberOption(val uid: String, val name: String)
 
 // Everything the Super Admin Dashboard screen needs to draw itself. Same plain-data-class
 // approach as the other dashboards (Member/FinanceManager/MealManager): this screen just
@@ -33,8 +38,21 @@ data class SuperAdminDashboardUiState(
     // currently open for this mess; otherwise the "yyyy-MM" month it's electing next
     // month's managers for - used to show status and stop a second poll being triggered
     // while one is already in progress.
-    val activeElectionTitle: String? = null
+    val activeElectionTitle: String? = null,
+    // Every approved member of the mess - powers the "Remove Member" and "Assign Roles"
+    // dialogs.
+    val messMembers: List<MemberOption> = emptyList()
 )
+
+// Result of tapping one of the destructive admin actions (Remove Member, Delete Mess).
+// Kept as a separate sealed interface + StateFlow from SuperAdminDashboardUiState, same
+// split FinanceManagerDashboardViewModel uses for its CloseMonthState.
+sealed interface AdminActionState {
+    data object Idle : AdminActionState
+    data object Loading : AdminActionState
+    data class Success(val message: String) : AdminActionState
+    data class Error(val message: String) : AdminActionState
+}
 
 // Standard MVVM data flow for this screen:
 // 1. Repositories (UserRepository, MealEntryRepository) are the only classes that talk
@@ -48,6 +66,7 @@ data class SuperAdminDashboardUiState(
 class SuperAdminDashboardViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
     private val userRepository: UserRepository = UserRepository(),
+    private val messRepository: MessRepository = MessRepository(),
     private val mealEntryRepository: MealEntryRepository = MealEntryRepository(),
     private val electionPollRepository: ElectionPollRepository = ElectionPollRepository(),
     private val noticeRepository: NoticeRepository = NoticeRepository()
@@ -55,6 +74,9 @@ class SuperAdminDashboardViewModel(
 
     private val _uiState = MutableStateFlow(SuperAdminDashboardUiState())
     val uiState: StateFlow<SuperAdminDashboardUiState> = _uiState.asStateFlow()
+
+    private val _adminActionState = MutableStateFlow<AdminActionState>(AdminActionState.Idle)
+    val adminActionState: StateFlow<AdminActionState> = _adminActionState.asStateFlow()
 
     // Today's date as "yyyy-MM-dd" - the same format every MealEntry document uses.
     private val today: String = LocalDate.now().toString()
@@ -88,6 +110,12 @@ class SuperAdminDashboardViewModel(
             val activeManagers = members.count {
                 it.role == UserRole.FINANCE_MANAGER || it.role == UserRole.MEAL_MANAGER
             }
+            val messMembers = members
+                .filter { it.uid != uid } // Exclude self from removal/role assignment lists
+                .map { member ->
+                    val name = member.name.ifBlank { member.email.ifBlank { member.uid } }
+                    MemberOption(member.uid, name)
+                }
 
             // Step 3: read the Super Admin's own meal entries for today, the same way
             // MemberDashboardViewModel does, to power the "Meals Today" part of the
@@ -107,7 +135,8 @@ class SuperAdminDashboardViewModel(
                 activeManagers = activeManagers,
                 personalBalance = user.balance,
                 personalMealsOnCount = countMealsOn(todaysMeals),
-                activeElectionTitle = activePoll?.title
+                activeElectionTitle = activePoll?.title,
+                messMembers = messMembers
             )
         }
     }
@@ -147,6 +176,58 @@ class SuperAdminDashboardViewModel(
         viewModelScope.launch {
             noticeRepository.postNotice(currentMessId, uid, title, message)
         }
+    }
+
+    fun removeMember(userId: String) {
+        _adminActionState.value = AdminActionState.Loading
+        viewModelScope.launch {
+            try {
+                userRepository.removeMember(userId)
+                _adminActionState.value = AdminActionState.Success("Member removed successfully.")
+                loadDashboard() // Refresh data
+            } catch (e: Exception) {
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to remove member.")
+            }
+        }
+    }
+
+    fun assignRole(userId: String, role: UserRole) {
+        _adminActionState.value = AdminActionState.Loading
+        viewModelScope.launch {
+            try {
+                // To prevent having two finance managers, first demote the current one.
+                if (role == UserRole.FINANCE_MANAGER || role == UserRole.MEAL_MANAGER) {
+                    val members = userRepository.getUsersForMess(messId ?: "")
+                    members.firstOrNull { it.role == role }?.let { currentManager ->
+                        userRepository.setRole(currentManager.uid, UserRole.MEMBER)
+                    }
+                }
+                userRepository.setRole(userId, role)
+                _adminActionState.value = AdminActionState.Success("Role assigned successfully.")
+                loadDashboard() // Refresh data
+            } catch (e: Exception) {
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to assign role.")
+            }
+        }
+    }
+
+    fun deleteMess() {
+        val currentMessId = messId ?: return
+        _adminActionState.value = AdminActionState.Loading
+        viewModelScope.launch {
+            try {
+                userRepository.removeAllMembersFromMess(currentMessId)
+                messRepository.deleteMess(currentMessId)
+                _adminActionState.value = AdminActionState.Success("Mess deleted successfully.")
+                // The fragment will observe this and navigate away.
+            } catch (e: Exception) {
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to delete mess.")
+            }
+        }
+    }
+
+    fun resetAdminActionState() {
+        _adminActionState.value = AdminActionState.Idle
     }
 
     // A standard meal (Breakfast/Lunch/Dinner) counts as "on" if no entry has been saved

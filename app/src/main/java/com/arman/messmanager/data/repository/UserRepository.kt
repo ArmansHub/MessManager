@@ -32,4 +32,32 @@ class UserRepository(
             .get()
             .await()
             .toObjects(User::class.java)
+
+    // Removes a member from their mess by clearing their messId. The user document and
+    // auth account remain, but they are effectively "kicked" and would need a new
+    // invite code to join another mess.
+    suspend fun removeMember(uid: String) {
+        firestore.collection(FirestoreCollections.USERS).document(uid)
+            .update("messId", null)
+            .await()
+    }
+
+    // Manually sets a user's role. Used by the Super Admin's "Assign Roles" control.
+    suspend fun setRole(uid: String, role: UserRole) {
+        firestore.collection(FirestoreCollections.USERS).document(uid)
+            .update("role", role)
+            .await()
+    }
+
+    // Used as part of the "Delete Mess" flow. Before the mess document itself can be
+    // deleted, all its members must be disassociated from it.
+    suspend fun removeAllMembersFromMess(messId: String) {
+        val users = getUsersForMess(messId)
+        val batch = firestore.batch()
+        users.forEach { user ->
+            val userRef = firestore.collection(FirestoreCollections.USERS).document(user.uid)
+            batch.update(userRef, "messId", null)
+        }
+        batch.commit().await()
+    }
 }
