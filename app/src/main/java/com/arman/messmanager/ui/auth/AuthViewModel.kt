@@ -49,6 +49,32 @@ class AuthViewModel(
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
+    fun checkCurrentUserSession() {
+        // If a user is already signed in with Firebase Auth, check their profile status
+        // and navigate them to the correct screen without requiring a manual login.
+        val firebaseUser = authRepository.currentUser ?: return
+        _uiState.value = AuthUiState.Loading
+        viewModelScope.launch {
+            _uiState.value = try {
+                withTimeout(NETWORK_TIMEOUT_MS) {
+                    val user = userRepository.getUser(firebaseUser.uid)
+                        ?: throw IllegalStateException("No profile found for this account")
+
+                    when {
+                        user.messId == null -> AuthUiState.NeedsMessSetup
+                        !user.joinApproved -> AuthUiState.PendingApproval
+                        else -> AuthUiState.LoginSuccess(user.role)
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                AuthUiState.Error("Request timed out. Check your connection and try again.")
+            } catch (e: Exception) {
+                // Don't show a login error if the auto-login check fails, just stay on the login screen.
+                AuthUiState.Idle
+            }
+        }
+    }
+
     fun login(email: String, password: String) {
         _uiState.value = AuthUiState.Loading
 

@@ -24,7 +24,9 @@ data class ElectionUiState(
     // The signed-in member's own current picks, or null if they haven't voted for that
     // role yet. Used to highlight the selected row on each ballot.
     val myFinanceManagerVote: String? = null,
-    val myMealManagerVote: String? = null
+    val myMealManagerVote: String? = null,
+    val financeManagerVoteCounts: Map<String, Int> = emptyMap(),
+    val mealManagerVoteCounts: Map<String, Int> = emptyMap()
 )
 
 // Voting side of the "Manager Election & Rotation System" (SRS section 3). Any mess
@@ -75,13 +77,18 @@ class ElectionViewModel(
                 }
             }
 
+            val financeVoteCounts = poll.financeManagerVotes.values.groupingBy { it }.eachCount()
+            val mealVoteCounts = poll.mealManagerVotes.values.groupingBy { it }.eachCount()
+
             _uiState.value = ElectionUiState(
                 isLoading = false,
                 hasActivePoll = true,
                 targetMonthId = poll.targetMonthId,
                 candidates = candidates,
                 myFinanceManagerVote = poll.financeManagerVotes[uid],
-                myMealManagerVote = poll.mealManagerVotes[uid]
+                myMealManagerVote = poll.mealManagerVotes[uid],
+                financeManagerVoteCounts = financeVoteCounts,
+                mealManagerVoteCounts = mealVoteCounts
             )
         }
     }
@@ -89,18 +96,54 @@ class ElectionViewModel(
     fun voteFinanceManager(candidateUid: String) {
         val currentPollId = pollId ?: return
         val uid = authRepository.currentUser?.uid ?: return
+
+        // Optimistically update the UI state immediately.
+        val currentState = _uiState.value
+        if (currentState.myFinanceManagerVote == candidateUid) return // No change
+
+        val newVoteCounts = currentState.financeManagerVoteCounts.toMutableMap()
+        // Decrement old vote if exists
+        currentState.myFinanceManagerVote?.let { oldVote ->
+            newVoteCounts[oldVote] = (newVoteCounts[oldVote] ?: 1) - 1
+        }
+        // Increment new vote
+        newVoteCounts[candidateUid] = (newVoteCounts[candidateUid] ?: 0) + 1
+
+        _uiState.value = currentState.copy(
+            myFinanceManagerVote = candidateUid,
+            financeManagerVoteCounts = newVoteCounts
+        )
+
         viewModelScope.launch {
             electionPollRepository.castFinanceManagerVote(currentPollId, uid, candidateUid)
-            refresh()
+            // refresh() is removed to prevent lag; UI is already updated.
         }
     }
 
     fun voteMealManager(candidateUid: String) {
         val currentPollId = pollId ?: return
         val uid = authRepository.currentUser?.uid ?: return
+
+        // Optimistically update the UI state immediately.
+        val currentState = _uiState.value
+        if (currentState.myMealManagerVote == candidateUid) return // No change
+
+        val newVoteCounts = currentState.mealManagerVoteCounts.toMutableMap()
+        // Decrement old vote if exists
+        currentState.myMealManagerVote?.let { oldVote ->
+            newVoteCounts[oldVote] = (newVoteCounts[oldVote] ?: 1) - 1
+        }
+        // Increment new vote
+        newVoteCounts[candidateUid] = (newVoteCounts[candidateUid] ?: 0) + 1
+
+        _uiState.value = currentState.copy(
+            myMealManagerVote = candidateUid,
+            mealManagerVoteCounts = newVoteCounts
+        )
+
         viewModelScope.launch {
             electionPollRepository.castMealManagerVote(currentPollId, uid, candidateUid)
-            refresh()
+            // refresh() is removed to prevent lag; UI is already updated.
         }
     }
 }

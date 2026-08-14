@@ -62,7 +62,13 @@ class SuperAdminDashboardFragment : Fragment() {
         binding.rowManageMembers.setOnClickListener {
             findNavController().navigate(R.id.action_superAdminDashboardFragment_to_manageMembersFragment)
         }
+        binding.rowGoToMemberDashboard.setOnClickListener {
+            findNavController().navigate(R.id.action_superAdminDashboardFragment_to_memberDashboardFragment)
+        }
         binding.rowTriggerElection.setOnClickListener { onTriggerElectionTapped() }
+        binding.rowMessSettings.setOnClickListener {
+            findNavController().navigate(R.id.action_superAdminDashboardFragment_to_messSetupFragment)
+        }
         binding.rowPostNotice.setOnClickListener { showPostNoticeDialog() }
         binding.rowAssignRoles.setOnClickListener { onAssignRolesTapped() }
         binding.rowRemoveMember.setOnClickListener { onRemoveMemberTapped() }

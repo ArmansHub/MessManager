@@ -69,10 +69,20 @@ class ElectionFragment : Fragment() {
             else -> "No election is currently open"
         }
 
-        renderBallot(binding.containerFinanceCandidates, state.candidates, state.myFinanceManagerVote) { uid ->
+        renderBallot(
+            binding.containerFinanceCandidates,
+            state.candidates,
+            state.myFinanceManagerVote,
+            state.financeManagerVoteCounts
+        ) { uid ->
             viewModel.voteFinanceManager(uid)
         }
-        renderBallot(binding.containerMealCandidates, state.candidates, state.myMealManagerVote) { uid ->
+        renderBallot(
+            binding.containerMealCandidates,
+            state.candidates,
+            state.myMealManagerVote,
+            state.mealManagerVoteCounts
+        ) { uid ->
             viewModel.voteMealManager(uid)
         }
     }
@@ -84,14 +94,17 @@ class ElectionFragment : Fragment() {
         container: LinearLayout,
         candidates: List<CandidateOption>,
         selectedUid: String?,
+        voteCounts: Map<String, Int>,
         onVote: (String) -> Unit
     ) {
         container.removeAllViews()
         candidates.forEach { candidate ->
             val row = ItemElectionCandidateRowBinding.inflate(layoutInflater, container, false)
             val isSelected = candidate.uid == selectedUid
+            val votes = voteCounts[candidate.uid] ?: 0
+            val voteText = resources.getQuantityString(R.plurals.vote_count, votes, votes)
 
-            row.tvCandidateName.text = candidate.name
+            row.tvCandidateName.text = "${candidate.name} ($voteText)"
             row.tvSelectedCheck.isVisible = isSelected
             row.root.setCardBackgroundColor(
                 ContextCompat.getColor(requireContext(), if (isSelected) R.color.brand_accent else R.color.white)
