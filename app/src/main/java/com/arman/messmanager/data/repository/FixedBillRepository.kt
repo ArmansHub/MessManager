@@ -20,14 +20,15 @@ class FixedBillRepository(
             .await()
             .toObjects(FixedBill::class.java)
 
-    suspend fun addFixedBill(messId: String, monthId: String, type: FixedBillType, amount: Double) {
+    suspend fun addFixedBill(messId: String, monthId: String, type: FixedBillType, amount: Double, addedBy: String) {
         val doc = fixedBills.document()
         val bill = FixedBill(
             billId = doc.id,
             messId = messId,
             monthId = monthId,
             type = type,
-            amount = amount
+            amount = amount,
+            addedBy = addedBy
         )
         doc.set(bill).await()
     }
