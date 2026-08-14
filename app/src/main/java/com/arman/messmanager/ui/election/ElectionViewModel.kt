@@ -66,11 +66,13 @@ class ElectionViewModel(
             }
             pollId = poll.pollId
 
-            // Resolve each eligible candidate's uid to a display name. One read per
-            // candidate is fine at this scale (one mess's worth of members) - the same
-            // simplicity trade-off ManageMembersViewModel makes.
+            // Resolve each eligible candidate's uid to a display name. Reading all mess
+            // members at once is more efficient than reading each candidate's profile
+            // individually (an N+1 query problem).
+            val messMembers = userRepository.getUsersForMess(messId)
+            val membersMap = messMembers.associateBy { it.uid }
             val candidates = poll.options.mapNotNull { candidateUid ->
-                userRepository.getUser(candidateUid)?.let { profile ->
+                membersMap[candidateUid]?.let { profile ->
                     CandidateOption(candidateUid, profile.name.ifBlank { profile.email })
                 }
             }
