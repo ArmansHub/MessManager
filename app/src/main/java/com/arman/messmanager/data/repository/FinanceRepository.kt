@@ -1,34 +1,35 @@
 package com.arman.messmanager.data.repository
 
-import com.arman.messmanager.data.model.DailyBazaar
+import com.arman.messmanager.data.model.BazaarEntry
 import com.arman.messmanager.data.model.Deposit
 import com.arman.messmanager.data.model.FixedBill
 import com.arman.messmanager.data.model.Meal
 import com.google.firebase.Timestamp
+import com.arman.messmanager.data.remote.firebase.FirestoreCollections
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import java.util.*
 
 class FinanceRepository {
     private val db = FirebaseFirestore.getInstance()
-    private val bazaarCollection = db.collection("bazaar")
+    private val bazaarCollection = db.collection(FirestoreCollections.BAZAAR_ENTRIES)
     private val billsCollection = db.collection("fixedBills")
     private val depositsCollection = db.collection("deposits")
     private val mealsCollection = db.collection("meals")
 
     // --- Bazaar ---
-    suspend fun addBazaar(bazaar: DailyBazaar) {
+    suspend fun addBazaar(bazaar: BazaarEntry) {
         val docId = bazaarCollection.document().id
-        bazaarCollection.document(docId).set(bazaar.copy(bazaarId = docId)).await()
+        bazaarCollection.document(docId).set(bazaar.copy(entryId = docId)).await()
     }
 
-    suspend fun getBazaarForMonth(messId: String, month: Date): List<DailyBazaar> {
+    suspend fun getBazaarForMonth(messId: String, month: Date): List<BazaarEntry> {
         val (start, end) = getMonthStartEnd(month)
         return bazaarCollection
             .whereEqualTo("messId", messId)
             .whereGreaterThanOrEqualTo("date", start)
             .whereLessThanOrEqualTo("date", end)
-            .get().await().toObjects(DailyBazaar::class.java)
+            .get().await().toObjects(BazaarEntry::class.java)
     }
 
     // --- Fixed Bills ---

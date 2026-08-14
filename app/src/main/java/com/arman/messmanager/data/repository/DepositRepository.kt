@@ -20,12 +20,12 @@ class DepositRepository(
     suspend fun getDeposits(messId: String): List<Deposit> =
         deposits.whereEqualTo("messId", messId).get().await().toObjects(Deposit::class.java)
 
-    suspend fun addDeposit(messId: String, userId: String, amount: Double): Deposit {
+    suspend fun addDeposit(messId: String, memberUid: String, amount: Double): Deposit {
         val doc = deposits.document()
         val deposit = Deposit(
             depositId = doc.id,
             messId = messId,
-            memberUid = userId,
+            memberUid = memberUid,
             amount = amount,
             date = Timestamp.now(),
             status = "approved"

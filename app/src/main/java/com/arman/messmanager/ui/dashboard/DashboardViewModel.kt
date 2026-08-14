@@ -47,7 +47,7 @@ class DashboardViewModel : ViewModel() {
                 val myDepositsList = financeRepository.getDepositsForUser(messId, currentUserId, month)
                 val pendingDepositsList = financeRepository.getPendingDeposits(messId)
 
-                val totalBazaar = bazaarList.sumOf { it.cost }
+                val totalBazaar = bazaarList.sumOf { it.amount }
                 val totalFixedBills = fixedBillsList.sumOf { it.amount }
                 val totalMeals = allMealsList.sumOf { it.breakfastCount + it.lunchCount + it.dinnerCount }
                 val mealRate = if (totalMeals > 0) totalBazaar / totalMeals else 0.0
@@ -82,22 +82,23 @@ class DashboardViewModel : ViewModel() {
 
     fun addBazaar(cost: Double) {
         viewModelScope.launch {
-            val bazaar = com.arman.messmanager.data.model.DailyBazaar(
+            val bazaar = com.arman.messmanager.data.model.BazaarEntry(
                 messId = messId,
-                cost = cost,
-                addedBy = currentUserId
+                date = java.time.LocalDate.now().toString(),
+                amount = cost,
+                addedByUid = currentUserId
             )
             financeRepository.addBazaar(bazaar)
             loadDashboardData() // Refresh
         }
     }
 
-    fun addFixedBill(amount: Double, description: String) {
+    fun addFixedBill(amount: Double, type: com.arman.messmanager.data.model.FixedBillType) {
         viewModelScope.launch {
             val bill = com.arman.messmanager.data.model.FixedBill(
                 messId = messId,
                 amount = amount,
-                description = description,
+                type = type,
                 addedBy = currentUserId
             )
             financeRepository.addFixedBill(bill)

@@ -38,7 +38,7 @@ data class SuperAdminDashboardUiState(
     // currently open for this mess; otherwise the "yyyy-MM" month it's electing next
     // month's managers for - used to show status and stop a second poll being triggered
     // while one is already in progress.
-    val activeElectionTitle: String? = null,
+    val activeElectionTargetMonthId: String? = null,
     // Every approved member of the mess - powers the "Remove Member" and "Assign Roles"
     // dialogs.
     val messMembers: List<MemberOption> = emptyList()
@@ -135,7 +135,7 @@ class SuperAdminDashboardViewModel(
                 activeManagers = activeManagers,
                 personalBalance = user.balance,
                 personalMealsOnCount = countMealsOn(todaysMeals),
-                activeElectionTitle = activePoll?.title,
+                activeElectionTargetMonthId = activePoll?.targetMonthId,
                 messMembers = messMembers
             )
         }
@@ -148,7 +148,7 @@ class SuperAdminDashboardViewModel(
     // guard keeps the ViewModel correct even if that check is ever bypassed.
     fun triggerElection() {
         val currentMessId = messId ?: return
-        if (_uiState.value.activeElectionTitle != null) return
+        if (_uiState.value.activeElectionTargetMonthId != null) return
 
         viewModelScope.launch {
             val approvedMembers = userRepository.getUsersForMess(currentMessId)
