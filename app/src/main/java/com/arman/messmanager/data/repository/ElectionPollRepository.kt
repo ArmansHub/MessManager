@@ -31,26 +31,46 @@ class ElectionPollRepository(
     suspend fun createPoll(
         messId: String,
         title: String,
-        options: List<String>
+        options: List<String>,
+        monthId: String,
+        durationHours: Int,
+        roles: List<String>
     ): ElectionPoll {
         val doc = electionPolls.document()
+        val startTime = System.currentTimeMillis()
+        val endTime = startTime + (durationHours * 60 * 60 * 1000L)
         val poll = ElectionPoll(
             pollId = doc.id,
             messId = messId,
             title = title,
-            options = options
+            options = options,
+            monthId = monthId,
+            startTime = startTime,
+            endTime = endTime,
+            roles = roles
         )
         doc.set(poll).await()
         return poll
     }
 
+    suspend fun getPastResults(messId: String): List<ElectionPoll> =
+        electionPolls
+            .whereEqualTo("messId", messId)
+            .whereEqualTo("status", "closed")
+            .get()
+            .await()
+            .toObjects(ElectionPoll::class.java)
+            .sortedByDescending { it.monthId }
+
     // Casts (or changes) one member's vote. Votes are
-    // stored as a Map<voterUid, option>, so updating just this voter's entry with
+    // stored as Map<voterUid, option>, so updating just this voter's entry with
     // dotted-field-path syntax overwrites their previous choice in place without
     // touching anyone else's vote or needing to read the whole document first.
-    suspend fun castVote(pollId: String, voterUid: String, option: String) {
+    suspend fun castVote(pollId: String, voterUid: String, role: String, candidateUid: String) {
+        if (pollId.isNullOrBlank()) return
+        val field = if (role == "finance") "financeVotes.$voterUid" else "mealVotes.$voterUid"
         electionPolls.document(pollId)
-            .update("votesMap.$voterUid", option)
+            .update(field, candidateUid)
             .await()
     }
 
@@ -58,6 +78,7 @@ class ElectionPollRepository(
     // a new one can be triggered for the following month - getActivePoll only ever looks
     // for status == "open", so a mess never has two open polls at once.
     suspend fun closePoll(pollId: String) {
+        if (pollId.isNullOrBlank()) return
         electionPolls.document(pollId).update("status", "closed").await()
     }
 }

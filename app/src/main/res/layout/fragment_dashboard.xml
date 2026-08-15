@@ -109,6 +109,7 @@
                 android:id="@+id/pendingDepositsRecyclerView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:nestedScrollingEnabled="false"
                 app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
                 tools:listitem="@layout/item_pending_deposit" />
 

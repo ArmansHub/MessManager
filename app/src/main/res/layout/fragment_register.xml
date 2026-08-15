@@ -73,10 +73,29 @@
                 android:padding="24dp">
 
                 <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/textInputLayoutName"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Full Name"
+                    app:boxStrokeColor="@color/brand_accent"
+                    app:hintTextColor="@color/brand_accent"
+                    app:startIconDrawable="@drawable/ic_person"
+                    app:startIconTint="@color/text_secondary">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textPersonName" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/textInputLayoutEmail"
                     style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
                     android:hint="Email"
                     app:boxStrokeColor="@color/brand_accent"
                     app:hintTextColor="@color/brand_accent"

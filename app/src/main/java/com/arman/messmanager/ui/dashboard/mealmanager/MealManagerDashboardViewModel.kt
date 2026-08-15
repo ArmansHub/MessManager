@@ -11,33 +11,48 @@ import com.arman.messmanager.data.repository.MessRepository
 import com.arman.messmanager.data.repository.NoticeRepository
 import com.arman.messmanager.data.repository.SpecialMealPollRepository
 import com.arman.messmanager.data.repository.UserRepository
+import com.arman.messmanager.data.repository.DepositRepository
+import com.arman.messmanager.data.repository.BazaarEntryRepository
+import com.arman.messmanager.data.repository.FixedBillRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-// Everything the Meal Manager Dashboard needs to draw itself. Same reasoning as the
-// other dashboards: one plain data class, no sealed states, since this screen just
-// displays live totals and reacts to setting a lock time.
 data class MealManagerDashboardUiState(
     val isLoading: Boolean = true,
+    // Profile
+    val profileName: String = "",
+    val profilePictureUrl: String? = null,
+    // Meal Counts
     val breakfastCount: Double = 0.0,
     val lunchCount: Double = 0.0,
     val dinnerCount: Double = 0.0,
     val breakfastLockTime: String? = null,
     val lunchLockTime: String? = null,
     val dinnerLockTime: String? = null,
-    // Whether the Super Admin has an open Manager Election poll right now (SRS section
-    // 3) - the Meal Manager is also a mess member and can vote, same as everyone else
-    // (RBAC matrix: "Update Own Meals & Vote" is Yes for every role).
+    val breakfastMenu: String = "",
+    val lunchMenu: String = "",
+    val dinnerMenu: String = "",
+    val breakfastLabel: String = "Breakfast",
+    val lunchLabel: String = "Lunch",
+    val dinnerLabel: String = "Dinner",
+    // Personal snapshot
+    val personalBalance: Double = 0.0,
+    val personalMealsToday: Int = 0,
     val hasActiveElection: Boolean = false,
-    // How many Special Meal Polls (SRS section 6) are currently open for this mess -
-    // drives the "opt in or out" banner. 0 hides it, same as hasActiveElection but a
-    // count instead of a flag since, unlike the Manager Election, several of these can
-    // be open at once.
-    val openSpecialMealPollCount: Int = 0
+    val openSpecialMealPollCount: Int = 0,
+    val openPolls: List<PollOption> = emptyList(),
+    val messMembers: List<MemberSummary> = emptyList()
 )
+
+data class PollOption(val id: String, val title: String, val count: Int)
+data class MemberSummary(val uid: String, val name: String)
 
 class MealManagerDashboardViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
@@ -46,94 +61,162 @@ class MealManagerDashboardViewModel(
     private val mealEntryRepository: MealEntryRepository = MealEntryRepository(),
     private val electionPollRepository: ElectionPollRepository = ElectionPollRepository(),
     private val specialMealPollRepository: SpecialMealPollRepository = SpecialMealPollRepository(),
-    private val noticeRepository: NoticeRepository = NoticeRepository()
+    private val noticeRepository: NoticeRepository = NoticeRepository(),
+    private val depositRepository: DepositRepository = DepositRepository(),
+    private val bazaarEntryRepository: BazaarEntryRepository = BazaarEntryRepository(),
+    private val fixedBillRepository: FixedBillRepository = FixedBillRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MealManagerDashboardUiState())
     val uiState: StateFlow<MealManagerDashboardUiState> = _uiState.asStateFlow()
 
-    // Today's date as "yyyy-MM-dd" - the same format every MealEntry document uses.
     private val today: String = LocalDate.now().toString()
-
-    // Remembered after the first load so setLockTime() doesn't have to re-fetch the
-    // manager's own profile every time.
     private var messId: String? = null
 
     init {
-        loadDashboard()
+        refresh()
     }
 
-    private fun loadDashboard() {
+    fun refresh() {
         viewModelScope.launch {
             val uid = authRepository.currentUser?.uid ?: return@launch
             val user = userRepository.getUser(uid) ?: return@launch
             val currentMessId = user.messId ?: return@launch
             messId = currentMessId
 
-            refreshSummary(currentMessId)
+            refreshSummary(currentMessId, user)
         }
     }
 
-    // Re-reads today's meal entries for the whole mess and the mess's lock times, then
-    // updates the screen. Called on first load and again after setting a lock time.
-    private suspend fun refreshSummary(currentMessId: String) {
-        // NOTE (simplification for now): this only counts meals that already have a
-        // saved entry in Firestore. A member who hasn't opened their dashboard yet
-        // today - and so never saved their default "on" choice - isn't counted here
-        // until they do. Counting every member by default is a natural next step.
+    private suspend fun refreshSummary(currentMessId: String, user: com.arman.messmanager.data.model.User) {
+        val uid = user.uid
+        val monthId = YearMonth.now().toString()
+        
+        val allDeposits = depositRepository.getDeposits(currentMessId)
+        val bazaarEntries = bazaarEntryRepository.getBazaarEntries(currentMessId)
+        val fixedBills = fixedBillRepository.getFixedBills(currentMessId, monthId)
+        val mealEntriesMess = mealEntryRepository.getMealsForMess(currentMessId)
+            .filter { it.date.startsWith(monthId) }
+        
+        val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneId.systemDefault())
+        
+        // 1. DYNAMIC MEAL RATE
+        val monthlyStandardBazaarCost = bazaarEntries
+            .filter { it.date.startsWith(monthId) && it.linkedPollId == null }
+            .sumOf { it.amount }
+        val totalStandardMeals = mealEntriesMess.sumOf { it.count }
+        val liveMealRate = if (totalStandardMeals > 0.0) monthlyStandardBazaarCost / totalStandardMeals else 0.0
+        
+        // 2. PERSONAL USAGE
+        val myMealsCountThisMonth = mealEntriesMess.filter { it.userId == uid }.sumOf { it.count }
+        val myMealCost = myMealsCountThisMonth * liveMealRate
+        
+        val members = userRepository.getUsersForMess(currentMessId).filter { it.joinApproved }
+        val monthlyFixedBillsCost = fixedBills.sumOf { it.amount }
+        val fixedBillShare = if (members.isNotEmpty()) monthlyFixedBillsCost / members.size else 0.0
+        
+        val monthlyApprovedDeposits = allDeposits
+            .filter { it.status == "approved" && timestampFormatter.format(it.date.toDate().toInstant()) == monthId }
+        val myApprovedDeposits = monthlyApprovedDeposits.filter { it.memberUid == uid }.sumOf { it.amount }
+        
+        val personalBalance = (user.balance) + myApprovedDeposits - (myMealCost + fixedBillShare)
+        
+        // 3. TODAY'S SUMMARY (Universal totals)
         val todaysMeals = mealEntryRepository.getMealsForMessAndDate(currentMessId, today)
+        val myTodayMeals = todaysMeals.filter { it.userId == uid }.sumOf { it.count }
+        
+        val breakfastTotal = countType(todaysMeals, MealType.BREAKFAST, members.size)
+        val lunchTotal = countType(todaysMeals, MealType.LUNCH, members.size)
+        val dinnerTotal = countType(todaysMeals, MealType.DINNER, members.size)
+        
         val mess = messRepository.getMess(currentMessId)
+        val isRamadan = mess?.ramadanModeEnabled ?: false
         val hasActiveElection = electionPollRepository.getActivePoll(currentMessId) != null
-        val openSpecialMealPollCount = specialMealPollRepository.getOpenPolls(currentMessId).size
+        val openPolls = specialMealPollRepository.getOpenPolls(currentMessId)
 
         _uiState.value = MealManagerDashboardUiState(
             isLoading = false,
-            breakfastCount = totalFor(todaysMeals, MealType.BREAKFAST),
-            lunchCount = totalFor(todaysMeals, MealType.LUNCH),
-            dinnerCount = totalFor(todaysMeals, MealType.DINNER),
+            profileName = user.name.ifBlank { "User" },
+            profilePictureUrl = user.profilePictureUrl,
+            breakfastCount = breakfastTotal,
+            lunchCount = lunchTotal,
+            dinnerCount = dinnerTotal,
             breakfastLockTime = mess?.breakfastLockTime,
             lunchLockTime = mess?.lunchLockTime,
             dinnerLockTime = mess?.dinnerLockTime,
+            breakfastMenu = mess?.breakfastMenu.orEmpty(),
+            lunchMenu = mess?.lunchMenu.orEmpty(),
+            dinnerMenu = mess?.dinnerMenu.orEmpty(),
+            breakfastLabel = if (isRamadan) "Sehri" else "Breakfast",
+            lunchLabel = if (isRamadan) "Iftar" else "Lunch",
+            dinnerLabel = if (isRamadan) "Dinner" else "Dinner",
+            personalBalance = personalBalance,
+            personalMealsToday = myTodayMeals.toInt(),
             hasActiveElection = hasActiveElection,
-            openSpecialMealPollCount = openSpecialMealPollCount
+            openSpecialMealPollCount = openPolls.size,
+            openPolls = openPolls.map { PollOption(it.pollId, it.title, it.optedInUserIds.size) },
+            messMembers = members.map { MemberSummary(it.uid, it.name.ifBlank { it.email }) }
         )
     }
 
-    // Adds up every member's "count" for one meal type. count can be 0.5 (half meal)
-    // or more than 1 (guest meals), so a simple sum already handles those cases.
-    private fun totalFor(meals: List<MealEntry>, mealType: MealType): Double =
-        meals.filter { it.mealType == mealType }.sumOf { it.count }
+    private fun countType(meals: List<MealEntry>, type: MealType, totalMembers: Int): Double {
+        val overrides = meals.filter { it.mealType == type }
+        val overridesUids = overrides.map { it.userId }.toSet()
+        val defaultOnCount = (totalMembers - overridesUids.size).toDouble()
+        val overrideCount = overrides.sumOf { it.count }
+        return defaultOnCount + overrideCount
+    }
 
-    // Called from the "Lock Meals" dialog after the manager picks a meal and time.
     fun setLockTime(mealType: MealType, time: String) {
         val currentMessId = messId ?: return
-
         viewModelScope.launch {
             messRepository.setMealLockTime(currentMessId, mealType, time)
-            refreshSummary(currentMessId) // reload so the new lock time shows immediately
+            userRepository.getUser(authRepository.currentUser?.uid)?.let { refreshSummary(currentMessId, it) }
         }
     }
 
-    // "Create Special Meal Poll" (SRS section 6, Meal Manager only): opens a new opt-in
-    // poll for an upcoming event, e.g. "Friday Biryani". eventDate is a "yyyy-MM-dd"
-    // string picked from the Fragment's DatePickerDialog.
+    fun setMenu(mealType: MealType, menu: String) {
+        val currentMessId = messId ?: return
+        viewModelScope.launch {
+            val mess = messRepository.getMess(currentMessId) ?: return@launch
+            val updatedMess = when (mealType) {
+                MealType.BREAKFAST -> mess.copy(breakfastMenu = menu)
+                MealType.LUNCH -> mess.copy(lunchMenu = menu)
+                MealType.DINNER -> mess.copy(dinnerMenu = menu)
+                else -> mess
+            }
+            messRepository.updateMess(updatedMess)
+            userRepository.getUser(authRepository.currentUser?.uid)?.let { refreshSummary(currentMessId, it) }
+        }
+    }
+
     fun createSpecialMealPoll(title: String, eventDate: String) {
         val currentMessId = messId ?: return
-
         viewModelScope.launch {
             specialMealPollRepository.createPoll(currentMessId, title, eventDate)
-            refreshSummary(currentMessId) // reload so the new poll's banner shows immediately
+            userRepository.getUser(authRepository.currentUser?.uid)?.let { refreshSummary(currentMessId, it) }
         }
     }
 
-    // "Post Notice" (SRS section 9, Admins and Managers only): puts a message on the
-    // Digital Notice Board every mess member sees read-only on their own dashboard.
-    fun postNotice(title: String, message: String) {
-        val currentMessId = messId ?: return
-        val uid = authRepository.currentUser?.uid ?: return
-
+    fun manuallyAddUserToSpecialMeal(pollId: String, userId: String) {
         viewModelScope.launch {
-            noticeRepository.postNotice(currentMessId, uid, title, message)
+            specialMealPollRepository.optIn(pollId, userId)
+            messId?.let { mid -> userRepository.getUser(authRepository.currentUser?.uid)?.let { u -> refreshSummary(mid, u) } }
         }
+    }
+
+    suspend fun getSpecialMealParticipants(pollId: String): List<String> {
+        val poll = specialMealPollRepository.getPoll(pollId)
+        return poll?.optedInUserIds.orEmpty()
+    }
+
+    suspend fun getMembersWithToggleOn(mealType: MealType): List<String> {
+        val currentMessId = messId ?: return emptyList()
+        val meals = mealEntryRepository.getMealsForMessAndDate(currentMessId, today)
+        val overrides = meals.filter { it.mealType == mealType }
+        val members = userRepository.getUsersForMess(currentMessId).filter { it.joinApproved }
+        
+        val offUids = overrides.filter { it.count <= 0.0 }.map { it.userId }.toSet()
+        return members.filter { it.uid !in offUids }.map { it.name.ifBlank { "Member" } }
     }
 }

@@ -52,10 +52,13 @@ class RegisterFragment : Fragment() {
     }
 
     private fun attemptRegister() {
+        val name = binding.etName.text?.toString().orEmpty().trim()
         val email = binding.etEmail.text?.toString().orEmpty().trim()
         val password = binding.etPassword.text?.toString().orEmpty()
         val confirmPassword = binding.etConfirmPassword.text?.toString().orEmpty()
 
+        binding.textInputLayoutName.error =
+            if (name.isBlank()) "Enter your full name" else null
         binding.textInputLayoutEmail.error =
             if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) "Enter a valid email" else null
         binding.textInputLayoutPassword.error =
@@ -63,11 +66,12 @@ class RegisterFragment : Fragment() {
         binding.textInputLayoutConfirmPassword.error =
             if (confirmPassword != password) "Passwords do not match" else null
 
-        val hasNoErrors = binding.textInputLayoutEmail.error == null &&
+        val hasNoErrors = binding.textInputLayoutName.error == null &&
+            binding.textInputLayoutEmail.error == null &&
             binding.textInputLayoutPassword.error == null &&
             binding.textInputLayoutConfirmPassword.error == null
         if (hasNoErrors) {
-            viewModel.register(email, password)
+            viewModel.register(name, email, password)
         }
     }
 

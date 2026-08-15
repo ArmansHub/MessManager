@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -19,32 +20,18 @@ import com.arman.messmanager.R
 import com.arman.messmanager.data.model.UserRole
 import com.arman.messmanager.data.repository.AuthRepository
 import com.arman.messmanager.databinding.FragmentSuperadminDashboardBinding
+import com.arman.messmanager.ui.navigation.safeNavigateToLogin
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 import java.util.Locale
 
-// Super Admin Dashboard, built from the SRS's "Role-Specific Dashboards" section:
-// a Top Card (Mess Overview), Quick Actions (Manage Members, Trigger Manager Elections,
-// Mess Settings), and a Personal View (own balance and meal status).
-//
-// This version reads real totals from Firestore through SuperAdminDashboardViewModel,
-// the same MVVM pattern used by the Member/Finance/Meal Manager dashboards: the Fragment
-// only renders whatever state the ViewModel publishes, it never touches Firestore itself.
-// "Manage Members" and "Trigger Manager Elections" are wired up; "Mess Settings" is not
-// clickable yet - that comes once that feature is built.
 class SuperAdminDashboardFragment : Fragment() {
 
     private var _binding: FragmentSuperadminDashboardBinding? = null
     private val binding get() = _binding!!
 
-    // "by viewModels()" asks the Fragment framework for a SuperAdminDashboardViewModel
-    // instance. It survives screen rotation and is destroyed automatically with the
-    // Fragment, so Firestore isn't re-queried on every configuration change.
     private val viewModel: SuperAdminDashboardViewModel by viewModels()
 
-    // Used only for the "Sign Out" button - a trivial one-off call, not really dashboard
-    // business logic, so it doesn't need to go through the ViewModel (same reasoning as
-    // MessSetupFragment's sign-out link).
     private val authRepository = AuthRepository()
 
     override fun onCreateView(
@@ -63,22 +50,23 @@ class SuperAdminDashboardFragment : Fragment() {
             findNavController().navigate(R.id.action_superAdminDashboardFragment_to_manageMembersFragment)
         }
         binding.rowGoToMemberDashboard.setOnClickListener {
-            // findNavController().navigate(R.id.action_superAdminDashboardFragment_to_memberDashboardFragment)
+            findNavController().navigate(R.id.action_superAdminDashboardFragment_to_memberDashboardFragment)
+        }
+        binding.rowProfile.setOnClickListener {
+            findNavController().navigate(R.id.action_superAdminDashboardFragment_to_profileFragment)
         }
         binding.rowTriggerElection.setOnClickListener { onTriggerElectionTapped() }
         binding.rowMessSettings.setOnClickListener {
-            // findNavController().navigate(R.id.action_superAdminDashboardFragment_to_messSetupFragment)
+            findNavController().navigate(R.id.action_superAdminDashboardFragment_to_messSettingsFragment)
         }
-        binding.rowPostNotice.setOnClickListener { showPostNoticeDialog() }
         binding.rowAssignRoles.setOnClickListener { onAssignRolesTapped() }
         binding.rowRemoveMember.setOnClickListener { onRemoveMemberTapped() }
         binding.rowDeleteMess.setOnClickListener { onDeleteMessTapped() }
+        binding.rowViewPastElections.setOnClickListener { onViewPastElectionsTapped() }
         binding.tvSignOut.setOnClickListener { signOut() }
 
-        // Same safe-collection pattern used on every other screen: repeatOnLifecycle
-        // (STARTED) means we only collect the ViewModel's StateFlow while this screen
-        // is actually visible, which is the recommended way to collect a Flow from a
-        // Fragment without leaking collection while it's backgrounded.
+        viewModel.refresh()
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state -> render(state) }
@@ -91,14 +79,13 @@ class SuperAdminDashboardFragment : Fragment() {
                     when (state) {
                         is AdminActionState.Idle -> { /* Do nothing */ }
                         is AdminActionState.Loading -> {
-                            // In a real app, show a loading dialog
                             binding.progressBar.isVisible = true
                         }
                         is AdminActionState.Success -> {
                             binding.progressBar.isVisible = false
                             Toast.makeText(requireContext(), state.message, Toast.LENGTH_SHORT).show()
                             if (state.message.contains("Mess deleted")) {
-                                findNavController().navigate(R.id.action_superAdminDashboardFragment_to_loginFragment)
+                                findNavController().safeNavigateToLogin()
                             }
                             viewModel.resetAdminActionState()
                         }
@@ -113,74 +100,65 @@ class SuperAdminDashboardFragment : Fragment() {
         }
     }
 
-    // Pushes one SuperAdminDashboardUiState onto the screen. This runs every time the
-    // ViewModel publishes a new state - first after the initial Firestore load
-    // completes, and again on any future refresh.
     private fun render(state: SuperAdminDashboardUiState) {
         binding.progressBar.isVisible = state.isLoading
 
-        // Mess Overview card.
+        binding.tvProfileName.text = state.profileName
+        com.bumptech.glide.Glide.with(this)
+            .load(state.profilePictureUrl)
+            .placeholder(R.drawable.ic_person)
+            .circleCrop()
+            .into(binding.ivSmallProfilePicture)
+
         binding.tvTotalMembers.text = state.totalMembers.toString()
         binding.tvActiveManagers.text = state.activeManagers.toString()
 
-        // Your Snapshot card (Personal View).
-        binding.tvPersonalBalance.text = formatCurrency(state.personalBalance)
-        binding.tvPersonalMeals.text = "${state.personalMealsOnCount} / 3"
-
-        // Trigger Manager Elections status - shown once a poll is open, so the Super
-        // Admin can see it's in progress instead of tapping the row again expecting
-        // something to happen.
         val activeTitle = state.activeElectionTitle
         binding.tvElectionStatus.isVisible = activeTitle != null
         binding.tvElectionStatus.text = activeTitle
     }
 
-    // Confirms before creating a poll (it immediately becomes visible/votable by every
-    // member), or explains why the row didn't do anything if one is already open.
     private fun onTriggerElectionTapped() {
         val activeTitle = viewModel.uiState.value.activeElectionTitle
         if (activeTitle != null) {
-            Toast.makeText(
-                requireContext(),
-                "An election is already open: $activeTitle",
-                Toast.LENGTH_SHORT
-            ).show()
+            AlertDialog.Builder(requireContext())
+                .setTitle("Election in Progress")
+                .setMessage("Current election: $activeTitle\n\nWhat would you like to do?")
+                .setPositiveButton("Vote / View Results") { _, _ ->
+                    findNavController().navigate(R.id.action_superAdminDashboardFragment_to_electionFragment)
+                }
+                .setNegativeButton("Close Election") { _, _ ->
+                    viewModel.closeElection()
+                }
+                .setNeutralButton("Cancel", null)
+                .show()
             return
         }
 
-        val nextMonthLabel = formatMonth(YearMonth.now().plusMonths(1).toString())
-        AlertDialog.Builder(requireContext())
-            .setTitle("Trigger Manager Elections")
-            .setMessage(
-                "This opens voting for $nextMonthLabel's Finance Manager and Meal " +
-                    "Manager. Every approved member becomes an eligible candidate and " +
-                    "can vote."
-            )
-            .setPositiveButton("Start Election") { _, _ -> viewModel.triggerElection() }
-            .setNegativeButton("Cancel", null)
-            .show()
+        showTriggerElectionDialog()
     }
 
-    // "Post Notice" (SRS section 9): a single multi-line message field, no custom
-    // dialog layout needed - same lightweight shape as every other "add" dialog here.
-    private fun showPostNoticeDialog() {
-        val messageInput = EditText(requireContext()).apply {
-            hint = "Notice message"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        }
+    private fun showTriggerElectionDialog() {
+        val nextMonthId = YearMonth.now().plusMonths(1).toString()
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_trigger_election, null)
+        val etDuration = dialogView.findViewById<EditText>(R.id.etDuration)
+        val cbFinance = dialogView.findViewById<android.widget.CheckBox>(R.id.cbFinance)
+        val cbMeal = dialogView.findViewById<android.widget.CheckBox>(R.id.cbMeal)
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Post Notice")
-            .setView(messageInput)
-            .setPositiveButton("Post") { _, _ ->
-                val message = messageInput.text.toString().trim()
-                if (message.isEmpty()) {
-                    Toast.makeText(requireContext(), "Enter a message", Toast.LENGTH_SHORT).show()
+            .setTitle("Trigger Manager Elections")
+            .setView(dialogView)
+            .setPositiveButton("Start Election") { _, _ ->
+                val selectedRoles = mutableListOf<String>()
+                if (cbFinance.isChecked) selectedRoles.add("finance")
+                if (cbMeal.isChecked) selectedRoles.add("meal")
+                val hours = etDuration.text.toString().toIntOrNull() ?: 24
+                
+                if (selectedRoles.isEmpty()) {
+                    Toast.makeText(requireContext(), "Select at least one role", Toast.LENGTH_SHORT).show()
                 } else {
-                    // The previous version of this dialog was missing the title field.
-                    // For now, we'll just pass the message as the title too.
-                    viewModel.postNotice(message, message)
-                    Toast.makeText(requireContext(), "Notice posted", Toast.LENGTH_SHORT).show()
+                    viewModel.triggerElection(nextMonthId, hours, selectedRoles)
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -251,16 +229,68 @@ class SuperAdminDashboardFragment : Fragment() {
             .show()
     }
 
+    private fun onViewPastElectionsTapped() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val pastElections = viewModel.getPastElections()
+            if (pastElections.isEmpty()) {
+                Toast.makeText(requireContext(), "No past elections found.", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            val items = pastElections.map { poll ->
+                "${formatMonth(poll.monthId)}: ${poll.title}"
+            }.toTypedArray()
+
+            AlertDialog.Builder(requireContext())
+                .setTitle("Past Election Results")
+                .setItems(items) { _, which ->
+                    val selected = pastElections[which]
+                    showElectionResultDetails(selected)
+                }
+                .setNegativeButton("Close", null)
+                .show()
+        }
+    }
+
+    private fun showElectionResultDetails(poll: com.arman.messmanager.data.model.ElectionPoll) {
+        val message = StringBuilder()
+        message.append("Status: ${poll.status.uppercase()}\n")
+        message.append("Month: ${formatMonth(poll.monthId)}\n\n")
+
+        if (poll.roles.contains("finance")) {
+            message.append("Finance Manager Votes:\n")
+            val results = poll.financeVotes.values.groupingBy { it }.eachCount()
+            if (results.isEmpty()) message.append("- No votes cast\n")
+            results.forEach { (uid, count) ->
+                message.append("- User ($uid): $count votes\n")
+            }
+            message.append("\n")
+        }
+
+        if (poll.roles.contains("meal")) {
+            message.append("Meal Manager Votes:\n")
+            val results = poll.mealVotes.values.groupingBy { it }.eachCount()
+            if (results.isEmpty()) message.append("- No votes cast\n")
+            results.forEach { (uid, count) ->
+                message.append("- User ($uid): $count votes\n")
+            }
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(poll.title)
+            .setMessage(message.toString())
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
     private fun formatCurrency(amount: Double): String =
         String.format(Locale.US, "৳ %,.2f", amount)
 
     private fun signOut() {
         authRepository.signOut()
-        findNavController().navigate(R.id.action_superAdminDashboardFragment_to_loginFragment)
+        findNavController().safeNavigateToLogin()
     }
 
-    // "2026-09" -> "September 2026". Falls back to the raw id if parsing ever fails
-    // (e.g. malformed data), so the screen degrades gracefully instead of crashing.
     private fun formatMonth(monthId: String): String = try {
         val yearMonth = YearMonth.parse(monthId)
         val monthName = yearMonth.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.US)

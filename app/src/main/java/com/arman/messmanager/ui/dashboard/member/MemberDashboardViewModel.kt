@@ -11,39 +11,48 @@ import com.arman.messmanager.data.repository.MessRepository
 import com.arman.messmanager.data.repository.NoticeRepository
 import com.arman.messmanager.data.repository.SpecialMealPollRepository
 import com.arman.messmanager.data.repository.UserRepository
+import com.arman.messmanager.data.repository.DepositRepository
+import com.arman.messmanager.data.repository.BazaarEntryRepository
+import com.arman.messmanager.data.repository.FixedBillRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.time.ZoneId
+import java.util.Locale
 
-// Everything the Member Dashboard screen needs to draw itself. We use one plain data
-// class (instead of several sealed states like AuthViewModel) because this screen just
-// shows live data and reacts to switch taps - there is no multi-step Loading/Success flow.
 data class MemberDashboardUiState(
     val isLoading: Boolean = true,
+    // Profile
+    val profileName: String = "",
+    val profilePictureUrl: String? = null,
+    // Data
     val balance: Double = 0.0,
     val mealRate: Double = 0.0,
     val isBreakfastOn: Boolean = true,
     val isLunchOn: Boolean = true,
     val isDinnerOn: Boolean = true,
-    // Whether the Super Admin has an open Manager Election poll right now (SRS section
-    // 3) - drives the "vote now" banner. The ballot itself lives in ElectionFragment;
-    // this dashboard only needs to know whether to point the member at it.
+    val breakfastMenu: String = "",
+    val lunchMenu: String = "",
+    val dinnerMenu: String = "",
+    val breakfastLabel: String = "Breakfast",
+    val lunchLabel: String = "Lunch",
+    val dinnerLabel: String = "Dinner",
     val hasActiveElection: Boolean = false,
-    // How many Special Meal Polls (SRS section 6) are currently open for this mess -
-    // drives the "opt in or out" banner, same reasoning as hasActiveElection but a count
-    // since several of these can be open at once.
     val openSpecialMealPollCount: Int = 0,
-    // The Digital Notice Board (SRS section 9), newest first - posted by Admins/Managers
-    // from their own dashboards, read-only here.
-    val notices: List<NoticeOption> = emptyList()
+    val notices: List<NoticeOption> = emptyList(),
+    val personalMealsToday: Int = 0
 )
 
-// One notice as shown on this screen - just enough to render a card. timestamp is left
-// raw (epoch millis) so the Fragment formats it, same split every other screen here uses
-// between ViewModel data and Fragment display formatting (e.g. formatMonth()).
 data class NoticeOption(val title: String, val content: String, val authorName: String, val timestamp: Long)
+
+sealed interface ToggleError {
+    data class TimeLocked(val mealName: String, val lockTime: String) : ToggleError
+}
 
 class MemberDashboardViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
@@ -52,109 +61,191 @@ class MemberDashboardViewModel(
     private val mealEntryRepository: MealEntryRepository = MealEntryRepository(),
     private val electionPollRepository: ElectionPollRepository = ElectionPollRepository(),
     private val specialMealPollRepository: SpecialMealPollRepository = SpecialMealPollRepository(),
-    private val noticeRepository: NoticeRepository = NoticeRepository()
+    private val noticeRepository: NoticeRepository = NoticeRepository(),
+    private val depositRepository: DepositRepository = DepositRepository(),
+    private val bazaarEntryRepository: BazaarEntryRepository = BazaarEntryRepository(),
+    private val fixedBillRepository: FixedBillRepository = FixedBillRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MemberDashboardUiState())
     val uiState: StateFlow<MemberDashboardUiState> = _uiState.asStateFlow()
 
-    // Today's date as "yyyy-MM-dd" - the same format we use for every MealEntry document.
-    // java.time works here without extra setup because minSdk is 26 (Android 8.0+).
-    private val today: String = LocalDate.now().toString()
+    private val _toggleError = MutableStateFlow<ToggleError?>(null)
+    val toggleError: StateFlow<ToggleError?> = _toggleError.asStateFlow()
 
-    // Remembered after the first load so toggleMeal() doesn't have to re-fetch the
-    // user's profile every time a switch is tapped.
+    private val today: String = LocalDate.now().toString()
     private var messId: String? = null
 
     init {
         loadDashboard()
     }
 
-    private fun loadDashboard() {
+    fun loadDashboard() {
         viewModelScope.launch {
             val uid = authRepository.currentUser?.uid ?: return@launch
-
-            // Step 1: read this member's own profile for their cached balance and
-            // which mess they belong to.
             val user = userRepository.getUser(uid) ?: return@launch
             messId = user.messId
+            val currentMessId = messId ?: return@launch
+            val monthId = YearMonth.now().toString()
 
-            // Step 2: read the mess document for the current live meal rate.
-            val mealRate = user.messId?.let { messRepository.getMess(it)?.mealRate } ?: 0.0
+            val deposits = depositRepository.getDeposits(currentMessId)
+            val bazaarEntries = bazaarEntryRepository.getBazaarEntries(currentMessId)
+            val fixedBills = fixedBillRepository.getFixedBills(currentMessId, monthId)
+            val mealEntriesAll = mealEntryRepository.getMealsForMess(currentMessId)
+                .filter { it.date.startsWith(monthId) }
 
-            // Step 3: read today's saved meal choices, if any, so the switches start
-            // in the correct position instead of always defaulting to on.
+            val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneId.systemDefault())
+            
+            val monthlyStandardBazaarCost = bazaarEntries
+                .filter { it.date.startsWith(monthId) && it.linkedPollId == null }
+                .sumOf { it.amount }
+            
+            val totalMessMealsThisMonth = mealEntriesAll.sumOf { it.count }
+            val liveMealRate = if (totalMessMealsThisMonth > 0.0) monthlyStandardBazaarCost / totalMessMealsThisMonth else 0.0
+            
+            val myMealsCountThisMonth = mealEntriesAll.filter { it.userId == uid }.sumOf { it.count }
+            val myMealCost = myMealsCountThisMonth * liveMealRate
+            
+            val monthlyFixedBillsCost = fixedBills.sumOf { it.amount }
+            val membersCount = userRepository.getUsersForMess(currentMessId).filter { it.joinApproved }.size
+            val fixedBillShare = if (membersCount > 0) monthlyFixedBillsCost / membersCount else 0.0
+            
+            val monthlyApprovedDeposits = deposits
+                .filter { it.status == "approved" && timestampFormatter.format(it.date.toDate().toInstant()) == monthId }
+            val myApprovedDeposits = monthlyApprovedDeposits.filter { it.memberUid == uid }.sumOf { it.amount }
+            
+            val currentBalance = user.balance + myApprovedDeposits - (myMealCost + fixedBillShare)
+
             val todayMeals = mealEntryRepository.getMealsForDate(uid, today)
+            val isBreakfastOn = isMealOn(todayMeals, MealType.BREAKFAST)
+            val isLunchOn = isMealOn(todayMeals, MealType.LUNCH)
+            val isDinnerOn = isMealOn(todayMeals, MealType.DINNER)
+            
+            var enabledMealsCount = 0
+            if (isBreakfastOn) enabledMealsCount++
+            if (isLunchOn) enabledMealsCount++
+            if (isDinnerOn) enabledMealsCount++
+            
+            val hasActiveElection = electionPollRepository.getActivePoll(currentMessId) != null
+            val openSpecialMealPollCount = specialMealPollRepository.getOpenPolls(currentMessId).size
 
-            // Step 4: check whether a Manager Election is open for this mess, to power
-            // the "vote now" banner.
-            val hasActiveElection = user.messId
-                ?.let { electionPollRepository.getActivePoll(it) } != null
-
-            // Step 5: count this mess's currently open Special Meal Polls (SRS section
-            // 6), to power the "opt in or out" banner.
-            val openSpecialMealPollCount = user.messId
-                ?.let { specialMealPollRepository.getOpenPolls(it).size } ?: 0
-
-            // Step 6: read the Digital Notice Board (SRS section 9). One profile read
-            // per notice to resolve its author's display name - the same "fine at this
-            // scale" trade-off ElectionViewModel makes for candidate names.
-            val notices = user.messId?.let { noticeRepository.getNotices(it) }.orEmpty()
-            val noticeOptions = notices.map { notice ->
-                val authorName = if (notice.postedBy.isNotBlank()) {
-                    userRepository.getUser(notice.postedBy)
-                        ?.name?.ifBlank { null } ?: "A mess manager"
+            val noticesRaw = noticeRepository.getNotices(currentMessId)
+            val filteredNotices = noticesRaw.filter { 
+                it.title.isNotBlank() || it.content.isNotBlank() || it.message != null 
+            }
+            val noticeOptions = filteredNotices.take(5).map { notice ->
+                val authorId = notice.postedBy.ifBlank { notice.authorUid }.orEmpty()
+                val authorName = if (authorId.isNotBlank()) {
+                    userRepository.getUser(authorId)?.name?.ifBlank { null } ?: "A manager"
                 } else {
-                    "A mess manager"
+                    "A manager"
                 }
                 NoticeOption(
-                    title = notice.title,
-                    content = notice.content,
+                    title = notice.title.ifBlank { notice.message }.orEmpty(),
+                    content = notice.content.ifBlank { notice.message }.orEmpty(),
                     authorName = authorName,
-                    timestamp = notice.date
+                    timestamp = if (notice.date != 0L) notice.date else (notice.timestamp ?: 0L)
                 )
             }
 
+            val mess = messRepository.getMess(currentMessId)
+            val isRamadan = mess?.ramadanModeEnabled ?: false
+
             _uiState.value = MemberDashboardUiState(
                 isLoading = false,
-                balance = user.balance,
-                mealRate = mealRate,
-                isBreakfastOn = isMealOn(todayMeals, MealType.BREAKFAST),
-                isLunchOn = isMealOn(todayMeals, MealType.LUNCH),
-                isDinnerOn = isMealOn(todayMeals, MealType.DINNER),
+                profileName = user.name.ifBlank { "User" },
+                profilePictureUrl = user.profilePictureUrl,
+                balance = currentBalance,
+                mealRate = liveMealRate,
+                isBreakfastOn = isBreakfastOn,
+                isLunchOn = isLunchOn,
+                isDinnerOn = isDinnerOn,
+                breakfastMenu = mess?.breakfastMenu.orEmpty(),
+                lunchMenu = mess?.lunchMenu.orEmpty(),
+                dinnerMenu = mess?.dinnerMenu.orEmpty(),
+                breakfastLabel = if (isRamadan) "Sehri" else "Breakfast",
+                lunchLabel = if (isRamadan) "Iftar" else "Lunch",
+                dinnerLabel = if (isRamadan) "Dinner" else "Dinner",
                 hasActiveElection = hasActiveElection,
                 openSpecialMealPollCount = openSpecialMealPollCount,
-                notices = noticeOptions
+                notices = noticeOptions,
+                personalMealsToday = enabledMealsCount
             )
         }
     }
 
-    // A meal counts as "on" if no entry has been saved yet (standard meals default to
-    // on) or if the saved entry's count is greater than zero.
     private fun isMealOn(meals: List<MealEntry>, mealType: MealType): Boolean {
         val entry = meals.firstOrNull { it.mealType == mealType }
         return entry?.let { it.count > 0.0 } ?: true
     }
 
-    // Called when the member flips a Breakfast/Lunch/Dinner switch.
     fun toggleMeal(mealType: MealType, isOn: Boolean) {
         val uid = authRepository.currentUser?.uid ?: return
         val currentMessId = messId ?: return
-
-        // Update the screen immediately so the switch feels instant, then save the
-        // change to Firestore in the background.
-        _uiState.value = applyToggle(_uiState.value, mealType, isOn)
-
+        
         viewModelScope.launch {
+            val mess = messRepository.getMess(currentMessId)
+            val lockTimeStr = when (mealType) {
+                MealType.BREAKFAST -> mess?.breakfastLockTime
+                MealType.LUNCH -> mess?.lunchLockTime
+                MealType.DINNER -> mess?.dinnerLockTime
+                else -> null
+            }
+
+            if (!isOn && lockTimeStr != null) {
+                try {
+                    val now = LocalTime.now()
+                    val lockTime = LocalTime.parse(lockTimeStr)
+                    
+                    // The lock ONLY applies to "Today's" meals. 
+                    // Members can always toggle meals for tomorrow.
+                    if (now.isAfter(lockTime)) {
+                        val mealLabel = when(mealType) {
+                            MealType.BREAKFAST -> _uiState.value.breakfastLabel
+                            MealType.LUNCH -> _uiState.value.lunchLabel
+                            MealType.DINNER -> _uiState.value.dinnerLabel
+                            else -> mealType.name
+                        }
+                        _toggleError.value = ToggleError.TimeLocked(mealLabel, lockTimeStr)
+                        // Trigger a state emission to force UI switches to reset to current DB state
+                        loadDashboard()
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    // If time parsing fails, allow the toggle but log it
+                    android.util.Log.e("MealLock", "Failed to parse lock time: $lockTimeStr")
+                }
+            }
+
+            _uiState.value = applyToggle(_uiState.value, mealType, isOn)
             mealEntryRepository.setMealOn(currentMessId, uid, today, mealType, isOn)
+            loadDashboard()
         }
     }
 
-    private fun applyToggle(state: MemberDashboardUiState, mealType: MealType, isOn: Boolean): MemberDashboardUiState =
-        when (mealType) {
+    fun clearToggleError() {
+        _toggleError.value = null
+    }
+
+    fun submitDepositRequest(amount: Double) {
+        val uid = authRepository.currentUser?.uid ?: return
+        val currentMessId = messId ?: return
+        viewModelScope.launch {
+            depositRepository.addDeposit(currentMessId, uid, amount, status = "pending")
+        }
+    }
+
+    private fun applyToggle(state: MemberDashboardUiState, mealType: MealType, isOn: Boolean): MemberDashboardUiState {
+        val newState = when (mealType) {
             MealType.BREAKFAST -> state.copy(isBreakfastOn = isOn)
             MealType.LUNCH -> state.copy(isLunchOn = isOn)
             MealType.DINNER -> state.copy(isDinnerOn = isOn)
-            else -> state // SEHRI/IFTAR belong to Ramadan Mode, not used yet
+            else -> state
         }
+        var count = 0
+        if (newState.isBreakfastOn) count++
+        if (newState.isLunchOn) count++
+        if (newState.isDinnerOn) count++
+        return newState.copy(personalMealsToday = count)
+    }
 }

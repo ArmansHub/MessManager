@@ -1,64 +1,76 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="10dp"
-    app:cardBackgroundColor="@color/white"
-    app:cardCornerRadius="14dp"
-    app:cardElevation="2dp">
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="16dp">
+
+    <ImageView
+        android:id="@+id/ivProfilePicture"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_person"
+        app:tint="@color/text_secondary" />
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_marginStart="16dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
 
         <TextView
             android:id="@+id/tvMemberName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textColor="@color/brand_primary"
-            android:textSize="15sp"
+            android:textSize="16sp"
             android:textStyle="bold"
-            tools:text="jane.doe@messmanager.test" />
+            tools:text="Member Name" />
+
+        <TextView
+            android:id="@+id/tvMemberPhone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            tools:text="017xxxxxxxx" />
 
         <TextView
             android:id="@+id/tvMemberRole"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            tools:text="General Member" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPrimaryAction"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:backgroundTint="@color/brand_primary"
-                android:text="Approve"
-                android:textSize="13sp"
-                app:cornerRadius="10dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSecondaryAction"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_weight="1"
-                android:text="Reject"
-                android:textColor="@color/error_red"
-                android:textSize="13sp" />
-        </LinearLayout>
+            android:textColor="@color/brand_accent"
+            android:textSize="12sp"
+            android:textStyle="italic"
+            tools:text="Member" />
     </LinearLayout>
-</com.google.android.material.card.MaterialCardView>
+
+    <LinearLayout
+        android:id="@+id/containerActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnApprove"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Approve"
+            android:textColor="@android:color/holo_green_dark" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnReject"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Reject"
+            android:textColor="@color/design_default_color_error" />
+    </LinearLayout>
+</LinearLayout>

@@ -68,6 +68,7 @@ class FinanceRepository {
     }
 
     suspend fun approveDeposit(depositId: String) {
+        if (depositId.isNullOrBlank()) return
         depositsCollection.document(depositId).update("status", "approved").await()
     }
 

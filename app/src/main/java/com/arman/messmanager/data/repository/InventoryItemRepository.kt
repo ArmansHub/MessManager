@@ -26,6 +26,7 @@ class InventoryItemRepository(
     // Toggling low-stock off also clears flaggedByUid - "who flagged it" only means
     // something while the flag is still active.
     suspend fun setLowStock(itemId: String, lowStock: Boolean, flaggedByUid: String?) {
+        if (itemId.isNullOrBlank()) return
         inventoryItems.document(itemId)
             .update(
                 mapOf(

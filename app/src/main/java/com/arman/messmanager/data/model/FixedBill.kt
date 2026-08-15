@@ -6,7 +6,7 @@ data class FixedBill(
     val billId: String = "",
     val messId: String = "",
     val monthId: String = "",
-    val type: FixedBillType,
+    val type: FixedBillType = FixedBillType.RENT,
     val amount: Double = 0.0,
     val date: Timestamp = Timestamp.now(),
     val addedBy: String = "" // User ID of the manager

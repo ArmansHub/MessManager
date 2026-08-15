@@ -22,8 +22,9 @@ class BazaarRosterRepository {
     }
 
     suspend fun assignBazaarDuty(rosterEntry: BazaarRoster) {
-        val docId = if (rosterEntry.rosterId.isEmpty()) rosterCollection.document().id else rosterEntry.rosterId
+        val docId = if (rosterEntry.rosterId.isNullOrBlank()) rosterCollection.document().id else rosterEntry.rosterId
         val entryWithId = rosterEntry.copy(rosterId = docId)
+        if (docId.isNullOrBlank()) return
         rosterCollection.document(docId).set(entryWithId).await()
     }
 }

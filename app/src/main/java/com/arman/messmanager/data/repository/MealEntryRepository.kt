@@ -57,6 +57,7 @@ class MealEntryRepository(
             mealType = mealType,
             count = if (isOn) 1.0 else 0.0
         )
+        if (id.isNullOrBlank()) return
         mealEntries.document(id).set(entry).await()
     }
 }

@@ -2,9 +2,8 @@ package com.arman.messmanager.ui.dashboard.superadmin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.arman.messmanager.data.model.ElectionPoll
 import com.arman.messmanager.data.model.MealEntry
-import com.arman.messmanager.data.model.MealType
-import com.arman.messmanager.data.model.User
 import com.arman.messmanager.data.model.UserRole
 import com.arman.messmanager.data.repository.AuthRepository
 import com.arman.messmanager.data.repository.ElectionPollRepository
@@ -12,41 +11,38 @@ import com.arman.messmanager.data.repository.MealEntryRepository
 import com.arman.messmanager.data.repository.MessRepository
 import com.arman.messmanager.data.repository.NoticeRepository
 import com.arman.messmanager.data.repository.UserRepository
+import com.arman.messmanager.data.repository.DepositRepository
+import com.arman.messmanager.data.repository.BazaarEntryRepository
+import com.arman.messmanager.data.repository.FixedBillRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
-// One mess member as offered in the "Remove Member" or "Assign Role" dialogs.
 data class MemberOption(val uid: String, val name: String)
 
-// Everything the Super Admin Dashboard screen needs to draw itself. Same plain-data-class
-// approach as the other dashboards (Member/FinanceManager/MealManager): this screen just
-// shows live totals, there is no multi-step Loading/Success flow to model.
 data class SuperAdminDashboardUiState(
     val isLoading: Boolean = true,
-    // "Mess Overview" card - counts across every member of the mess.
+    // Profile
+    val profileName: String = "",
+    val profilePictureUrl: String? = null,
+    // Mess stats
     val totalMembers: Int = 0,
     val activeManagers: Int = 0,
-    // "Your Snapshot" card - the Super Admin's own balance and meal status, since every
-    // Admin/Manager is fundamentally a mess member too (SRS section 1, "Important Note").
+    // Personal snapshot
     val personalBalance: Double = 0.0,
     val personalMealsOnCount: Int = 0,
-    // "Trigger Manager Elections" quick action (SRS section 3). Null when no election is
-    // currently open for this mess; otherwise the "yyyy-MM" month it's electing next
-    // month's managers for - used to show status and stop a second poll being triggered
-    // while one is already in progress.
+    // Action indicators
     val activeElectionTitle: String? = null,
-    // Every approved member of the mess - powers the "Remove Member" and "Assign Roles"
-    // dialogs.
-    val messMembers: List<MemberOption> = emptyList()
+    // Data for selectors
+    val messMembers: List<MemberOption> = emptyList(),
+    val dueThreshold: Double = -500.0
 )
 
-// Result of tapping one of the destructive admin actions (Remove Member, Delete Mess).
-// Kept as a separate sealed interface + StateFlow from SuperAdminDashboardUiState, same
-// split FinanceManagerDashboardViewModel uses for its CloseMonthState.
 sealed interface AdminActionState {
     data object Idle : AdminActionState
     data object Loading : AdminActionState
@@ -54,22 +50,16 @@ sealed interface AdminActionState {
     data class Error(val message: String) : AdminActionState
 }
 
-// Standard MVVM data flow for this screen:
-// 1. Repositories (UserRepository, MealEntryRepository) are the only classes that talk
-//    to Firestore directly.
-// 2. This ViewModel calls those repositories, combines the results into one
-//    SuperAdminDashboardUiState, and publishes it through a StateFlow.
-// 3. SuperAdminDashboardFragment only ever *observes* that StateFlow and updates its
-//    TextViews - it never queries Firestore itself. Keeping Firestore calls out of the
-//    Fragment means the data survives configuration changes (e.g. screen rotation)
-//    and the UI layer stays simple to test.
 class SuperAdminDashboardViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
     private val userRepository: UserRepository = UserRepository(),
     private val messRepository: MessRepository = MessRepository(),
     private val mealEntryRepository: MealEntryRepository = MealEntryRepository(),
     private val electionPollRepository: ElectionPollRepository = ElectionPollRepository(),
-    private val noticeRepository: NoticeRepository = NoticeRepository()
+    private val noticeRepository: NoticeRepository = NoticeRepository(),
+    private val depositRepository: DepositRepository = DepositRepository(),
+    private val bazaarEntryRepository: BazaarEntryRepository = BazaarEntryRepository(),
+    private val fixedBillRepository: FixedBillRepository = FixedBillRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SuperAdminDashboardUiState())
@@ -78,150 +68,173 @@ class SuperAdminDashboardViewModel(
     private val _adminActionState = MutableStateFlow<AdminActionState>(AdminActionState.Idle)
     val adminActionState: StateFlow<AdminActionState> = _adminActionState.asStateFlow()
 
-    // Today's date as "yyyy-MM-dd" - the same format every MealEntry document uses.
     private val today: String = LocalDate.now().toString()
-
-    // Remembered after the first load so triggerElection() doesn't have to re-fetch the
-    // Super Admin's own profile every time.
     private var messId: String? = null
 
     init {
-        loadDashboard()
+        refresh()
     }
 
-    private fun loadDashboard() {
-        // viewModelScope.launch starts a coroutine tied to this ViewModel's lifecycle,
-        // so it is cancelled automatically if the ViewModel is cleared (e.g. the user
-        // navigates away before Firestore responds).
+    fun refresh() {
         viewModelScope.launch {
             val uid = authRepository.currentUser?.uid ?: return@launch
-
-            // Step 1: read the Super Admin's own profile document for their cached
-            // balance and which mess they belong to.
             val user = userRepository.getUser(uid) ?: return@launch
-            val currentMessId = user.messId ?: return@launch
-            messId = currentMessId
+            messId = user.messId
+            val currentMessId = messId ?: return@launch
 
-            // Step 2: read every member document in this mess so we can count real
-            // totals for the "Mess Overview" card. This is a live Firestore read (not a
-            // cached counter on the Mess document), so it is always accurate as of the
-            // moment the dashboard loads.
-            val members = userRepository.getUsersForMess(currentMessId)
-            val activeManagers = members.count {
-                it.role == UserRole.FINANCE_MANAGER || it.role == UserRole.MEAL_MANAGER
-            }
-            val messMembers = members
-                .filter { it.uid != uid } // Exclude self from removal/role assignment lists
-                .map { member ->
-                    val name = member.name.ifBlank { member.email.ifBlank { member.uid } }
-                    MemberOption(member.uid, name)
-                }
-
-            // Step 3: read the Super Admin's own meal entries for today, the same way
-            // MemberDashboardViewModel does, to power the "Meals Today" part of the
-            // Personal View snapshot.
-            val todaysMeals = mealEntryRepository.getMealsForDate(uid, today)
-
-            // Step 4: check whether an election is already open, so the Fragment can
-            // show its status instead of letting the Super Admin trigger a second,
-            // overlapping poll.
-            val activePoll = electionPollRepository.getActivePoll(currentMessId)
-
-            // Step 5: publish everything as one immutable state object. The Fragment's
-            // collector (in onViewCreated) fires the moment this value changes.
-            _uiState.value = SuperAdminDashboardUiState(
-                isLoading = false,
-                totalMembers = members.size,
-                activeManagers = activeManagers,
-                personalBalance = user.balance,
-                personalMealsOnCount = countMealsOn(todaysMeals),
-                activeElectionTitle = activePoll?.title,
-                messMembers = messMembers
-            )
+            loadDashboardData(currentMessId, user)
         }
     }
 
-    // "Trigger Manager Elections" (SRS section 3): opens a new poll for next month's
-    // Finance and Meal Manager, nominating every currently approved member as an
-    // eligible candidate. Does nothing if a poll is already open - the Fragment is
-    // expected to only call this when activeElectionTitle is null, but this
-    // guard keeps the ViewModel correct even if that check is ever bypassed.
-    fun triggerElection() {
+    private suspend fun loadDashboardData(currentMessId: String, user: com.arman.messmanager.data.model.User) {
+        val uid = user.uid
+        
+        val users = userRepository.getUsersForMess(currentMessId)
+        val approvedMembers = users.filter { it.joinApproved }
+        
+        // Personal calculation
+        val monthId = YearMonth.now().toString()
+        val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneId.systemDefault())
+        
+        val deposits = depositRepository.getDeposits(currentMessId)
+        val bazaarEntries = bazaarEntryRepository.getBazaarEntries(currentMessId)
+        val fixedBills = fixedBillRepository.getFixedBills(currentMessId, monthId)
+        val mealEntriesAll = mealEntryRepository.getMealsForMess(currentMessId)
+            .filter { it.date.startsWith(monthId) }
+
+        // APPROVED DEPOSITS
+        val monthlyApprovedDeposits = deposits
+            .filter { it.status == "approved" && timestampFormatter.format(it.date.toDate().toInstant()) == monthId }
+        val myApprovedDeposits = monthlyApprovedDeposits.filter { it.memberUid == uid }.sumOf { it.amount }
+
+        // DYNAMIC MEAL RATE
+        val monthlyStandardBazaarCost = bazaarEntries
+            .filter { it.date.startsWith(monthId) && it.linkedPollId == null }
+            .sumOf { it.amount }
+        val totalMessMeals = mealEntriesAll.sumOf { it.count }
+        val mealRate = if (totalMessMeals > 0.0) monthlyStandardBazaarCost / totalMessMeals else 0.0
+        
+        // PERSONAL USAGE
+        val myMealsCount = mealEntriesAll.filter { it.userId == uid }.sumOf { it.count }
+        val myMealCost = myMealsCount * mealRate
+        
+        // FIXED BILLS
+        val monthlyFixedBillsCost = fixedBills.sumOf { it.amount }
+        val fixedBillShare = if (approvedMembers.isNotEmpty()) monthlyFixedBillsCost / approvedMembers.size else 0.0
+        
+        val personalBalance = (user.balance) + myApprovedDeposits - (myMealCost + fixedBillShare)
+        
+        val todayMeals = mealEntryRepository.getMealsForDate(uid, today)
+        val myTodayMealsCount = countMealsOn(todayMeals)
+
+        val activePoll = electionPollRepository.getActivePoll(currentMessId)
+        val mess = messRepository.getMess(currentMessId)
+        
+        _uiState.value = SuperAdminDashboardUiState(
+            isLoading = false,
+            profileName = user.name.ifBlank { "User" },
+            profilePictureUrl = user.profilePictureUrl,
+            totalMembers = approvedMembers.size,
+            activeManagers = users.count { it.role == UserRole.FINANCE_MANAGER || it.role == UserRole.MEAL_MANAGER },
+            personalBalance = personalBalance,
+            personalMealsOnCount = myTodayMealsCount,
+            activeElectionTitle = activePoll?.title,
+            messMembers = approvedMembers.filter { it.uid != uid }.map { MemberOption(it.uid, it.name.ifBlank { it.email }) },
+            dueThreshold = -(mess?.dueThresholdBdt ?: 500.0)
+        )
+    }
+
+    fun triggerElection(monthId: String, durationHours: Int, roles: List<String>) {
         val currentMessId = messId ?: return
-        if (_uiState.value.activeElectionTitle != null) return
-
         viewModelScope.launch {
-            val approvedMembers = userRepository.getUsersForMess(currentMessId)
-                .filter { it.joinApproved }
-            val targetMonthId = YearMonth.now().plusMonths(1).toString()
-
-            electionPollRepository.createPoll(
-                messId = currentMessId,
-                title = "Manager Election for $targetMonthId",
-                options = approvedMembers.map { it.uid }
-            )
-
-            // Reload so the new poll's status (and any other totals that may have
-            // shifted) shows up immediately instead of waiting for the next visit.
-            loadDashboard()
+            _adminActionState.value = AdminActionState.Loading
+            try {
+                val members = userRepository.getUsersForMess(currentMessId).filter { it.joinApproved }
+                val candidateUids = members.map { it.uid }
+                electionPollRepository.createPoll(
+                    messId = currentMessId,
+                    title = "Manager Election for $monthId",
+                    options = candidateUids,
+                    monthId = monthId,
+                    durationHours = durationHours,
+                    roles = roles
+                )
+                _adminActionState.value = AdminActionState.Success("Election started for $monthId")
+                messId?.let { userRepository.getUser(authRepository.currentUser?.uid)?.let { u -> loadDashboardData(it, u) } }
+            } catch (e: Exception) {
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to trigger election")
+            }
         }
     }
 
-    // "Post Notice" (SRS section 9, Admins and Managers only): puts a message on the
-    // Digital Notice Board every mess member sees read-only on their own dashboard.
+    fun closeElection() {
+        val currentMessId = messId ?: return
+        viewModelScope.launch {
+            _adminActionState.value = AdminActionState.Loading
+            try {
+                val poll = electionPollRepository.getActivePoll(currentMessId)
+                if (poll != null) {
+                    electionPollRepository.closePoll(poll.pollId)
+                    _adminActionState.value = AdminActionState.Success("Election closed")
+                    messId?.let { userRepository.getUser(authRepository.currentUser?.uid)?.let { u -> loadDashboardData(it, u) } }
+                }
+            } catch (e: Exception) {
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to close election")
+            }
+        }
+    }
+
+    suspend fun getPastElections(): List<ElectionPoll> {
+        val currentMessId = messId ?: return emptyList()
+        return electionPollRepository.getPastResults(currentMessId)
+    }
+
     fun postNotice(title: String, message: String) {
         val currentMessId = messId ?: return
         val uid = authRepository.currentUser?.uid ?: return
-
         viewModelScope.launch {
             noticeRepository.postNotice(currentMessId, uid, title, message)
+            _adminActionState.value = AdminActionState.Success("Notice posted")
         }
     }
 
-    fun removeMember(userId: String) {
-        _adminActionState.value = AdminActionState.Loading
+    fun removeMember(memberUid: String) {
+        val currentMessId = messId ?: return
         viewModelScope.launch {
+            _adminActionState.value = AdminActionState.Loading
             try {
-                userRepository.removeMember(userId)
-                _adminActionState.value = AdminActionState.Success("Member removed successfully.")
-                loadDashboard() // Refresh data
+                userRepository.removeMember(memberUid)
+                _adminActionState.value = AdminActionState.Success("Member removed")
+                messId?.let { userRepository.getUser(authRepository.currentUser?.uid)?.let { u -> loadDashboardData(it, u) } }
             } catch (e: Exception) {
-                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to remove member.")
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to remove member")
             }
         }
     }
 
-    fun assignRole(userId: String, role: UserRole) {
-        _adminActionState.value = AdminActionState.Loading
+    fun assignRole(memberUid: String, role: UserRole) {
+        val currentMessId = messId ?: return
         viewModelScope.launch {
+            _adminActionState.value = AdminActionState.Loading
             try {
-                // To prevent having two finance managers, first demote the current one.
-                if (role == UserRole.FINANCE_MANAGER || role == UserRole.MEAL_MANAGER) {
-                    val members = userRepository.getUsersForMess(messId ?: "")
-                    members.firstOrNull { it.role == role }?.let { currentManager ->
-                        userRepository.setRole(currentManager.uid, UserRole.MEMBER)
-                    }
-                }
-                userRepository.setRole(userId, role)
-                _adminActionState.value = AdminActionState.Success("Role assigned successfully.")
-                loadDashboard() // Refresh data
+                userRepository.setRole(memberUid, role)
+                _adminActionState.value = AdminActionState.Success("Role assigned successfully")
+                messId?.let { userRepository.getUser(authRepository.currentUser?.uid)?.let { u -> loadDashboardData(it, u) } }
             } catch (e: Exception) {
-                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to assign role.")
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to assign role")
             }
         }
     }
 
     fun deleteMess() {
         val currentMessId = messId ?: return
-        _adminActionState.value = AdminActionState.Loading
         viewModelScope.launch {
+            _adminActionState.value = AdminActionState.Loading
             try {
-                userRepository.removeAllMembersFromMess(currentMessId)
                 messRepository.deleteMess(currentMessId)
-                _adminActionState.value = AdminActionState.Success("Mess deleted successfully.")
-                // The fragment will observe this and navigate away.
+                _adminActionState.value = AdminActionState.Success("Mess deleted successfully")
             } catch (e: Exception) {
-                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to delete mess.")
+                _adminActionState.value = AdminActionState.Error(e.message ?: "Failed to delete mess")
             }
         }
     }
@@ -230,13 +243,11 @@ class SuperAdminDashboardViewModel(
         _adminActionState.value = AdminActionState.Idle
     }
 
-    // A standard meal (Breakfast/Lunch/Dinner) counts as "on" if no entry has been saved
-    // yet for it (standard meals default to on) or if the saved entry's count is greater
-    // than zero. Mirrors MemberDashboardViewModel.isMealOn(), just counted across all
-    // three meal types instead of exposed as three separate switch states.
-    private fun countMealsOn(meals: List<MealEntry>): Int =
-        listOf(MealType.BREAKFAST, MealType.LUNCH, MealType.DINNER).count { mealType ->
-            val entry = meals.firstOrNull { it.mealType == mealType }
+    fun countMealsOn(meals: List<MealEntry>): Int {
+        val mealTypes = listOf(com.arman.messmanager.data.model.MealType.BREAKFAST, com.arman.messmanager.data.model.MealType.LUNCH, com.arman.messmanager.data.model.MealType.DINNER)
+        return mealTypes.count { type ->
+            val entry = meals.find { it.mealType == type }
             entry?.let { it.count > 0.0 } ?: true
         }
+    }
 }

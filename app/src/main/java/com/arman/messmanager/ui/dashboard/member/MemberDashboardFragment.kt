@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import android.widget.Toast
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -17,20 +18,12 @@ import com.arman.messmanager.data.model.MealType
 import com.arman.messmanager.data.repository.AuthRepository
 import com.arman.messmanager.databinding.FragmentMemberDashboardBinding
 import com.arman.messmanager.databinding.ItemNoticeRowBinding
+import com.arman.messmanager.ui.navigation.safeNavigateToLogin
+import com.bumptech.glide.Glide
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.TextStyle
 import java.util.Locale
 
-// General Member Dashboard, built from the SRS's "Role-Specific Dashboards" section:
-// a Top Card (balance + live meal rate), Quick Actions (toggle today's meals), a Manager
-// Election banner (SRS section 3, shown only while a poll is open), and a read-only
-// Notices section.
-//
-// This version reads real data from Firestore through MemberDashboardViewModel and
-// lets the member turn today's standard meals on/off.
 class MemberDashboardFragment : Fragment() {
 
     private var _binding: FragmentMemberDashboardBinding? = null
@@ -38,9 +31,6 @@ class MemberDashboardFragment : Fragment() {
 
     private val viewModel: MemberDashboardViewModel by viewModels()
 
-    // Used only for the "Sign Out" button - a trivial one-off call, not really dashboard
-    // business logic, so it doesn't need to go through the ViewModel (same reasoning as
-    // MessSetupFragment's sign-out link).
     private val authRepository = AuthRepository()
 
     override fun onCreateView(
@@ -55,34 +45,114 @@ class MemberDashboardFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.cardElectionBanner.setOnClickListener {
-            findNavController().navigate(R.id.action_memberDashboardFragment_to_electionFragment)
+        binding.rowProfile.setOnClickListener {
+            findNavController().navigate(R.id.action_memberDashboardFragment_to_profileFragment)
         }
-        binding.cardSpecialMealPollBanner.setOnClickListener {
-            findNavController().navigate(R.id.action_memberDashboardFragment_to_specialMealPollFragment)
-        }
+        
         binding.tvSignOut.setOnClickListener { signOut() }
+        
+        binding.tvViewAllNotices.setOnClickListener {
+            showAllNoticesDialog(viewModel.uiState.value.notices)
+        }
 
-        // Same safe-collection pattern used on the Login/Register screens: only
-        // collect the ViewModel's state while this screen is visible.
+        binding.rowDepositRequest.setOnClickListener { showDepositRequestDialog() }
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state -> render(state) }
             }
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.toggleError.collect { error ->
+                    if (error != null) {
+                        when (error) {
+                            is ToggleError.TimeLocked -> {
+                                Toast.makeText(requireContext(), 
+                                    "Cannot turn off ${error.mealName}. Locked since ${error.lockTime}", 
+                                    Toast.LENGTH_LONG).show()
+                                viewModel.clearToggleError()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showDepositRequestDialog() {
+        val amountInput = android.widget.EditText(requireContext()).apply {
+            hint = "0.00"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Send Deposit Request")
+            .setMessage("Enter the amount you've paid to the mess")
+            .setView(amountInput)
+            .setPositiveButton("Send Request") { _, _ ->
+                val amount = amountInput.text.toString().toDoubleOrNull()
+                if (amount != null && amount > 0.0) {
+                    viewModel.submitDepositRequest(amount)
+                    Toast.makeText(requireContext(), "Request sent to Finance Manager", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(requireContext(), "Enter a valid amount", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showAllNoticesDialog(notices: List<NoticeOption>) {
+        if (notices.isEmpty()) return
+        val message = StringBuilder()
+        notices.forEach { notice ->
+            message.append("📌 ${notice.title}\n")
+            message.append("${notice.content}\n")
+            message.append("By ${notice.authorName} · ${formatTimestamp(notice.timestamp)}\n")
+            message.append("----------------------------\n\n")
+        }
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("All Notices")
+            .setMessage(message.toString())
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     private fun render(state: MemberDashboardUiState) {
         binding.progressBar.isVisible = state.isLoading
 
+        binding.tvProfileName.text = state.profileName
+        Glide.with(this)
+            .load(state.profilePictureUrl)
+            .placeholder(R.drawable.ic_person)
+            .circleCrop()
+            .into(binding.ivSmallProfilePicture)
+
         binding.tvBalance.text = formatCurrency(state.balance)
+        binding.tvPersonalMeals.text = "Meals Today: ${state.personalMealsToday} / 3"
         binding.tvMealRate.text = "Live Meal Rate: ${formatCurrency(state.mealRate)} / meal"
+
+        binding.tvLabelBreakfast.text = state.breakfastLabel
+        binding.tvLabelLunch.text = state.lunchLabel
+        binding.tvLabelDinner.text = state.dinnerLabel
+
+        binding.tvMenuBreakfast.text = "${state.breakfastLabel}: ${state.breakfastMenu.ifBlank { "Not set" }}"
+        binding.tvMenuLunch.text = "${state.lunchLabel}: ${state.lunchMenu.ifBlank { "Not set" }}"
+        binding.tvMenuDinner.text = "${state.dinnerLabel}: ${state.dinnerMenu.ifBlank { "Not set" }}"
 
         bindMealSwitch(binding.switchBreakfast, state.isBreakfastOn, MealType.BREAKFAST)
         bindMealSwitch(binding.switchLunch, state.isLunchOn, MealType.LUNCH)
         bindMealSwitch(binding.switchDinner, state.isDinnerOn, MealType.DINNER)
 
+        // Force update the text in case toggle states changed
+        binding.tvPersonalMeals.text = "Meals Today: ${state.personalMealsToday} / 3"
+
         binding.cardElectionBanner.isVisible = state.hasActiveElection
+        binding.cardElectionBanner.setOnClickListener {
+            findNavController().navigate(R.id.action_memberDashboardFragment_to_electionFragment)
+        }
 
         binding.cardSpecialMealPollBanner.isVisible = state.openSpecialMealPollCount > 0
         binding.tvSpecialMealPollBannerTitle.text = if (state.openSpecialMealPollCount == 1) {
@@ -90,14 +160,13 @@ class MemberDashboardFragment : Fragment() {
         } else {
             "${state.openSpecialMealPollCount} special meal polls are open"
         }
+        binding.cardSpecialMealPollBanner.setOnClickListener {
+            findNavController().navigate(R.id.action_memberDashboardFragment_to_specialMealPollFragment)
+        }
 
-        binding.tvNoNotices.isVisible = !state.isLoading && state.notices.isEmpty()
         renderNotices(binding.containerNotices, state.notices)
     }
 
-    // Rebuilds the Notice Board from scratch on each state update - simple and correct
-    // for the small, infrequently-changing list this screen deals with, same trade-off
-    // ElectionFragment/SpecialMealPollFragment make for their own card lists.
     private fun renderNotices(container: LinearLayout, notices: List<NoticeOption>) {
         container.removeAllViews()
         notices.forEach { notice ->
@@ -108,21 +177,16 @@ class MemberDashboardFragment : Fragment() {
         }
     }
 
-    // Epoch millis -> "Aug 14, 2026".
     private fun formatTimestamp(epochMs: Long): String {
-        val date = Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()).toLocalDate()
-        val month = date.month.getDisplayName(TextStyle.SHORT, Locale.US)
+        val date = java.time.Instant.ofEpochMilli(epochMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        val month = date.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.US)
         return "$month ${date.dayOfMonth}, ${date.year}"
     }
 
-    // Updates a switch to match the ViewModel's state and (re)attaches its listener.
-    // We clear the listener before changing "isChecked" so that loading data from
-    // Firestore doesn't get mistaken for the user tapping the switch, which would
-    // otherwise cause a pointless extra write straight back to Firestore.
-    private fun bindMealSwitch(switchView: SwitchMaterial, isOn: Boolean, mealType: MealType) {
-        switchView.setOnCheckedChangeListener(null)
-        switchView.isChecked = isOn
-        switchView.setOnCheckedChangeListener { _, isChecked ->
+    private fun bindMealSwitch(switch: SwitchMaterial, isOn: Boolean, mealType: MealType) {
+        switch.setOnCheckedChangeListener(null)
+        switch.isChecked = isOn
+        switch.setOnCheckedChangeListener { _, isChecked ->
             viewModel.toggleMeal(mealType, isChecked)
         }
     }
@@ -132,7 +196,7 @@ class MemberDashboardFragment : Fragment() {
 
     private fun signOut() {
         authRepository.signOut()
-        findNavController().navigate(R.id.action_memberDashboardFragment_to_loginFragment)
+        findNavController().safeNavigateToLogin()
     }
 
     override fun onDestroyView() {

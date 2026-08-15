@@ -11,9 +11,10 @@ import kotlinx.coroutines.tasks.await
 class UserRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
-    suspend fun getUser(uid: String): User? {
-        if (uid.isBlank()) return null
-        return firestore.collection(FirestoreCollections.USERS).document(uid).get().await()
+    suspend fun getUser(uid: String?): User? {
+        val safeUid = uid ?: return null
+        if (safeUid.isBlank()) return null
+        return firestore.collection(FirestoreCollections.USERS).document(safeUid).get().await()
             // toObject() maps the Firestore document fields onto our User data class.
             .toObject(User::class.java)
     }
@@ -41,7 +42,7 @@ class UserRepository(
     // auth account remain, but they are effectively "kicked" and would need a new
     // invite code to join another mess.
     suspend fun removeMember(uid: String) {
-        if (uid.isBlank()) return
+        if (uid.isNullOrBlank()) return
         firestore.collection(FirestoreCollections.USERS).document(uid)
             .update("messId", null)
             .await()
@@ -49,7 +50,7 @@ class UserRepository(
 
     // Manually sets a user's role. Used by the Super Admin's "Assign Roles" control.
     suspend fun setRole(uid: String, role: UserRole) {
-        if (uid.isBlank()) return
+        if (uid.isNullOrBlank()) return
         firestore.collection(FirestoreCollections.USERS).document(uid)
             .update("role", role)
             .await()
@@ -61,8 +62,10 @@ class UserRepository(
         val users = getUsersForMess(messId)
         val batch = firestore.batch()
         users.forEach { user ->
-            val userRef = firestore.collection(FirestoreCollections.USERS).document(user.uid)
-            batch.update(userRef, "messId", null)
+            if (!user.uid.isNullOrBlank()) {
+                val userRef = firestore.collection(FirestoreCollections.USERS).document(user.uid)
+                batch.update(userRef, "messId", null)
+            }
         }
         batch.commit().await()
     }

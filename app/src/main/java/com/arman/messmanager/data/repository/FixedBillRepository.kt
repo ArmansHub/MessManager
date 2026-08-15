@@ -32,4 +32,9 @@ class FixedBillRepository(
         )
         doc.set(bill).await()
     }
+
+    suspend fun updateFixedBill(bill: FixedBill) {
+        if (bill.billId.isBlank()) return
+        fixedBills.document(bill.billId).set(bill).await()
+    }
 }

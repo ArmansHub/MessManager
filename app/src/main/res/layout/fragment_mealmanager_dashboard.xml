@@ -6,6 +6,7 @@
     android:layout_height="match_parent"
     android:background="@color/gradient_end"
     android:fillViewport="true"
+    android:overScrollMode="never"
     tools:context=".ui.dashboard.mealmanager.MealManagerDashboardFragment">
 
     <LinearLayout
@@ -17,36 +18,66 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="top"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/rowProfile"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="vertical">
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                app:cardBackgroundColor="@color/white"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Meal Manager"
-                    android:textColor="@color/brand_primary"
-                    android:textSize="22sp"
-                    android:textStyle="bold" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="12dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Run today's meals for the mess"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
-            </LinearLayout>
+                    <ImageView
+                        android:id="@+id/ivSmallProfilePicture"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@drawable/ic_person"
+                        app:tint="@color/brand_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvProfileName"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="My Profile"
+                            android:textColor="@color/brand_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Tap to view details"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:id="@+id/tvSignOut"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
                 android:background="?attr/selectableItemBackground"
                 android:padding="8dp"
                 android:text="Sign Out"
@@ -60,13 +91,18 @@
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:layout_marginTop="16dp"
-            android:indeterminateTint="@color/brand_accent" />
+            android:indeterminateTint="@color/brand_accent"
+            android:visibility="gone" />
 
-        <!-- Top Card: Today's Meal Summary (Total Breakfast, Lunch, Dinner counts). -->
+        <!-- Universal Meal Summary -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardMealSummary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
             app:cardBackgroundColor="@color/brand_primary"
             app:cardCornerRadius="20dp"
             app:cardElevation="4dp">
@@ -98,6 +134,7 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/tvLabelSummaryBreakfast"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:alpha="0.8"
@@ -111,18 +148,17 @@
                             android:layout_height="wrap_content"
                             android:text="10"
                             android:textColor="@color/white"
-                            android:textSize="24sp"
+                            android:textSize="22sp"
                             android:textStyle="bold" />
 
                         <TextView
                             android:id="@+id/tvBreakfastLock"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:alpha="0.8"
-                            android:text="Not locked"
+                            android:alpha="0.7"
+                            android:text="20:00"
                             android:textColor="@color/white"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -132,6 +168,7 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/tvLabelSummaryLunch"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:alpha="0.8"
@@ -143,20 +180,19 @@
                             android:id="@+id/tvLunchCount"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="8"
+                            android:text="12"
                             android:textColor="@color/white"
-                            android:textSize="24sp"
+                            android:textSize="22sp"
                             android:textStyle="bold" />
 
                         <TextView
                             android:id="@+id/tvLunchLock"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:alpha="0.8"
-                            android:text="Not locked"
+                            android:alpha="0.7"
+                            android:text="08:00"
                             android:textColor="@color/white"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -166,6 +202,7 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/tvLabelSummaryDinner"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:alpha="0.8"
@@ -179,136 +216,38 @@
                             android:layout_height="wrap_content"
                             android:text="12"
                             android:textColor="@color/white"
-                            android:textSize="24sp"
+                            android:textSize="22sp"
                             android:textStyle="bold" />
 
                         <TextView
                             android:id="@+id/tvDinnerLock"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:alpha="0.8"
-                            android:text="Not locked"
+                            android:alpha="0.7"
+                            android:text="16:00"
                             android:textColor="@color/white"
-                            android:textSize="10sp" />
+                            android:textSize="11sp" />
                     </LinearLayout>
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
-        <!-- Manager Election banner (SRS section 3): only visible while the Super Admin
-             has an open election poll, linking through to ElectionFragment to vote. -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardElectionBanner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?attr/selectableItemBackground"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/brand_accent"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="3dp"
-            tools:visibility="visible">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Manager Election is open"
-                        android:textColor="@color/white"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Tap to vote for next month's managers"
-                        android:textColor="@color/white"
-                        android:textSize="13sp" />
-                </LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="16dp"
+                    android:alpha="0.2"
+                    android:background="@color/white" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="›"
+                    android:layout_marginTop="12dp"
+                    android:text="Tap to see who is eating / Set Menu"
                     android:textColor="@color/white"
-                    android:textSize="20sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Special Meal Polls banner (SRS section 6): only visible while at least one
-             special-event poll (e.g. Friday Biryani) is open, linking through to
-             SpecialMealPollFragment to opt in/out. -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardSpecialMealPollBanner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?attr/selectableItemBackground"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/brand_accent"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="3dp"
-            tools:visibility="visible">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/tvSpecialMealPollBannerTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/white"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        tools:text="1 special meal poll is open" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Tap to opt in or out"
-                        android:textColor="@color/white"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="›"
-                    android:textColor="@color/white"
-                    android:textSize="20sp" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Quick Actions: Lock Meals, Override Meals, Create Special Meal Poll, Set Today's Menu. -->
+        <!-- Quick Actions -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -347,35 +286,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Lock Meals"
-                        android:textColor="@color/brand_primary"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="›"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="18sp" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:background="@color/gradient_start" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="14dp">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Override Meals"
+                        android:text="Set Meal Lock Times"
                         android:textColor="@color/brand_primary"
                         android:textSize="15sp" />
 
@@ -425,8 +336,12 @@
                     android:background="@color/gradient_start" />
 
                 <LinearLayout
+                    android:id="@+id/rowSpecialMealManagement"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:padding="14dp">
@@ -435,7 +350,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Set Today's Menu"
+                        android:text="Special Meal Management"
                         android:textColor="@color/brand_primary"
                         android:textSize="15sp" />
 
@@ -453,12 +368,12 @@
                     android:background="@color/gradient_start" />
 
                 <LinearLayout
-                    android:id="@+id/rowPostNotice"
+                    android:id="@+id/rowGoToMemberDashboard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:padding="14dp">
@@ -467,7 +382,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Post Notice"
+                        android:text="Go to Member Dashboard"
                         android:textColor="@color/brand_primary"
                         android:textSize="15sp" />
 
@@ -480,81 +395,6 @@
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-
-        <!-- Personal View: every manager is also a mess member, so they see their own
-             balance and meal status too (per the SRS "Important Note"). -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="Your Snapshot"
-            android:textColor="@color/brand_primary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:layout_marginBottom="8dp"
-            app:cardBackgroundColor="@color/white"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="2dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Your Balance"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/tvPersonalBalance"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="৳ 1,250.00"
-                        android:textColor="@color/brand_primary"
-                        android:textSize="18sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Meals Today"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/tvPersonalMeals"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="2 / 3"
-                        android:textColor="@color/brand_primary"
-                        android:textSize="18sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
     </LinearLayout>
 
 </androidx.core.widget.NestedScrollView>

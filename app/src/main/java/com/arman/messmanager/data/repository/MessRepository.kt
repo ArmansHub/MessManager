@@ -30,8 +30,10 @@ class MessRepository(
         messes.whereEqualTo("inviteCode", inviteCode).limit(1).get().await()
             .documents.firstOrNull()?.toObject(Mess::class.java)
 
-    suspend fun getMess(messId: String): Mess? =
-        messes.document(messId).get().await().toObject(Mess::class.java)
+    suspend fun getMess(messId: String): Mess? {
+        if (messId.isNullOrBlank()) return null
+        return messes.document(messId).get().await().toObject(Mess::class.java)
+    }
 
     // Saves a cut-off time (e.g. "20:00") for one meal type. Ramadan meal types
     // (Sehri/Iftar) aren't supported yet, so those are simply ignored for now.
@@ -42,6 +44,7 @@ class MessRepository(
             MealType.DINNER -> "dinnerLockTime"
             else -> return
         }
+        if (messId.isNullOrBlank()) return
         messes.document(messId).update(field, time).await()
     }
 
@@ -50,7 +53,13 @@ class MessRepository(
     // Bills, and the Finance Manager Dashboard's monthly totals - starts counting from
     // zero for the new id.
     suspend fun advanceToMonth(messId: String, newMonthId: String) {
+        if (messId.isNullOrBlank()) return
         messes.document(messId).update("currentMonthId", newMonthId).await()
+    }
+
+    suspend fun updateMess(mess: Mess) {
+        if (mess.messId.isNullOrBlank()) return
+        messes.document(mess.messId).set(mess).await()
     }
 
     private fun generateInviteCode(): String =
@@ -59,6 +68,7 @@ class MessRepository(
     // Deletes the entire mess document. This is a destructive and irreversible action.
     // It should only be called after all members have been removed from the mess.
     suspend fun deleteMess(messId: String) {
+        if (messId.isNullOrBlank()) return
         messes.document(messId).delete().await()
     }
 }

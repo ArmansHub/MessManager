@@ -5,6 +5,12 @@ data class ElectionPoll(
     val messId: String = "",
     val title: String = "",
     val options: List<String> = emptyList(),
-    val votesMap: Map<String, String> = emptyMap(), // voterUid -> option
-    val status: String = "open" // "open" or "closed"
+    val financeVotes: Map<String, String> = emptyMap(), // voterUid -> candidateUid
+    val mealVotes: Map<String, String> = emptyMap(),    // voterUid -> candidateUid
+    val status: String = "open", // "open" or "closed"
+    val monthId: String = "",    // "yyyy-MM"
+    val startTime: Long = 0L,
+    val endTime: Long = 0L,
+    val roles: List<String> = emptyList(), // "finance", "meal"
+    val winners: Map<String, String> = emptyMap() // role -> userUid
 )

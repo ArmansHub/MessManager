@@ -6,8 +6,11 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -19,18 +22,11 @@ import com.arman.messmanager.R
 import com.arman.messmanager.data.model.FixedBillType
 import com.arman.messmanager.data.repository.AuthRepository
 import com.arman.messmanager.databinding.FragmentFinancemanagerDashboardBinding
+import com.arman.messmanager.ui.navigation.safeNavigateToLogin
 import kotlinx.coroutines.launch
 import java.time.YearMonth
-import java.time.format.TextStyle
 import java.util.Locale
 
-// Finance Manager Dashboard, built from the SRS's "Role-Specific Dashboards" section:
-// a Top Card (Pending Approvals), an Overview (Mess Balance vs. Expenses), a Manager
-// Election banner (SRS section 3, shown only while a poll is open), and Quick Actions
-// to add a daily bazaar entry, a fixed bill, or close the month (SRS section 8).
-//
-// This version reads real totals from Firestore through FinanceManagerDashboardViewModel.
-// The Personal View card is not wired up yet.
 class FinanceManagerDashboardFragment : Fragment() {
 
     private var _binding: FragmentFinancemanagerDashboardBinding? = null
@@ -38,13 +34,8 @@ class FinanceManagerDashboardFragment : Fragment() {
 
     private val viewModel: FinanceManagerDashboardViewModel by viewModels()
 
-    // Used only for the "Sign Out" button - a trivial one-off call, not really dashboard
-    // business logic, so it doesn't need to go through the ViewModel (same reasoning as
-    // MessSetupFragment's sign-out link).
     private val authRepository = AuthRepository()
 
-    // Held so the "Closing the month…" dialog can be dismissed once a terminal
-    // (Success/Error) state arrives - AlertDialog has no built-in way to await that.
     private var closeMonthProgressDialog: AlertDialog? = null
 
     override fun onCreateView(
@@ -60,20 +51,25 @@ class FinanceManagerDashboardFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         binding.rowAddBazaar.setOnClickListener { showAddBazaarDialog() }
-        binding.rowAddFixedBill.setOnClickListener { showAddFixedBillDialog() }
+        binding.rowAddFixedBill.setOnClickListener { showManageFixedCostsDialog() }
+        binding.rowAddRegularBill.setOnClickListener { showAddRegularBillDialog() }
         binding.rowLogDeposit.setOnClickListener { showLogDepositDialog() }
         binding.rowCloseMonth.setOnClickListener { onCloseMonthTapped() }
-        binding.rowPostNotice.setOnClickListener { showPostNoticeDialog() }
         binding.tvSignOut.setOnClickListener { signOut() }
-        binding.cardElectionBanner.setOnClickListener {
-            findNavController().navigate(R.id.action_financeManagerDashboardFragment_to_electionFragment)
+        
+        binding.rowGoToMemberDashboard.setOnClickListener {
+            findNavController().navigate(R.id.action_financeManagerDashboardFragment_to_memberDashboardFragment)
         }
-        binding.cardSpecialMealPollBanner.setOnClickListener {
-            findNavController().navigate(R.id.action_financeManagerDashboardFragment_to_specialMealPollFragment)
+        binding.rowProfile.setOnClickListener {
+            findNavController().navigate(R.id.action_financeManagerDashboardFragment_to_profileFragment)
         }
 
-        // Same safe-collection pattern used on every other screen: only collect the
-        // ViewModel's state while this screen is visible.
+        binding.cardPendingApprovals.setOnClickListener { showPendingApprovalsDialog() }
+        binding.cardMessBalance.setOnClickListener { showMemberBalancesDialog() }
+        binding.cardTotalExpenses.setOnClickListener { showExpensesBreakdownDialog() }
+
+        viewModel.refresh()
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state -> render(state) }
@@ -90,6 +86,13 @@ class FinanceManagerDashboardFragment : Fragment() {
     private fun render(state: FinanceDashboardUiState) {
         binding.progressBar.isVisible = state.isLoading
 
+        binding.tvProfileName.text = state.profileName
+        com.bumptech.glide.Glide.with(this)
+            .load(state.profilePictureUrl)
+            .placeholder(R.drawable.ic_person)
+            .circleCrop()
+            .into(binding.ivSmallProfilePicture)
+
         binding.tvPendingDeposits.text = if (state.pendingApprovalsCount == 0) {
             "No deposits awaiting approval"
         } else {
@@ -98,19 +101,164 @@ class FinanceManagerDashboardFragment : Fragment() {
 
         binding.tvMessBalance.text = formatCurrency(state.messBalance)
         binding.tvTotalExpenses.text = formatCurrency(state.totalExpenses)
-
-        binding.cardElectionBanner.isVisible = state.hasActiveElection
-
-        val openPollCount = state.openSpecialMealPolls.size
-        binding.cardSpecialMealPollBanner.isVisible = openPollCount > 0
-        binding.tvSpecialMealPollBannerTitle.text = if (openPollCount == 1) {
-            "1 special meal poll is open"
-        } else {
-            "$openPollCount special meal polls are open"
-        }
     }
 
-    // Simple AlertDialog with a single amount field - no custom layout needed.
+    private fun showPendingApprovalsDialog() {
+        val pending = viewModel.uiState.value.pendingDeposits
+        if (pending.isEmpty()) {
+            Toast.makeText(requireContext(), "No pending approvals", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 20, 60, 20)
+        }
+
+        pending.forEach { dep ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 15, 0, 15)
+            }
+            
+            val infoText = TextView(requireContext()).apply {
+                text = "${dep.name}: ${formatCurrency(dep.amount)}"
+                setTextColor(ContextCompat.getColor(context, R.color.brand_primary))
+                textSize = 16f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            
+            val buttonRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 10, 0, 0)
+            }
+            
+            val approveBtn = TextView(requireContext()).apply {
+                text = "APPROVE"
+                setTextColor(ContextCompat.getColor(context, android.R.color.holo_green_dark))
+                setPadding(0, 0, 40, 0)
+                setOnClickListener {
+                    viewModel.approveDeposit(dep.id)
+                    Toast.makeText(context, "Deposit Approved", Toast.LENGTH_SHORT).show()
+                }
+            }
+            
+            val rejectBtn = TextView(requireContext()).apply {
+                text = "REJECT"
+                setTextColor(ContextCompat.getColor(context, android.R.color.holo_red_dark))
+                setOnClickListener {
+                    viewModel.rejectDeposit(dep.id)
+                    Toast.makeText(context, "Deposit Rejected", Toast.LENGTH_SHORT).show()
+                }
+            }
+            
+            buttonRow.addView(approveBtn)
+            buttonRow.addView(rejectBtn)
+            
+            row.addView(infoText)
+            row.addView(buttonRow)
+            container.addView(row)
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Pending Deposit Requests")
+            .setView(container)
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun showMemberBalancesDialog() {
+        val balances = viewModel.uiState.value.memberBalances
+        if (balances.isEmpty()) return
+
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 20, 60, 20)
+        }
+
+        balances.forEach { member ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 15, 0, 15)
+            }
+            
+            val nameLabel = TextView(requireContext()).apply {
+                text = member.name
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setTextColor(ContextCompat.getColor(context, R.color.brand_primary))
+                textSize = 15f
+            }
+            
+            val balanceValue = TextView(requireContext()).apply {
+                text = formatCurrency(member.balance)
+                setTextColor(if (member.balance >= 0) 
+                    ContextCompat.getColor(context, android.R.color.holo_green_dark) 
+                else 
+                    ContextCompat.getColor(context, android.R.color.holo_red_dark))
+                textSize = 15f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            
+            row.addView(nameLabel)
+            row.addView(balanceValue)
+            container.addView(row)
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Member Balances (Live)")
+            .setView(container)
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun showExpensesBreakdownDialog() {
+        val state = viewModel.uiState.value
+        val bazaarCost = state.monthlyBazaarCost
+        val fixedBills = state.currentFixedBills
+
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 20, 60, 20)
+        }
+
+        // Bazaar row
+        addBreakdownRow(container, "Bazaar / Market", bazaarCost)
+        
+        // Fixed bills rows
+        fixedBills.forEach { (type, amount) ->
+            if (amount > 0) {
+                addBreakdownRow(container, type.name.lowercase(Locale.getDefault()).replaceFirstChar { it.titlecase() }, amount)
+            }
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Expense Breakdown")
+            .setView(container)
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun addBreakdownRow(container: LinearLayout, label: String, amount: Double) {
+        val row = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 15, 0, 15)
+        }
+        val nameText = TextView(requireContext()).apply {
+            text = label
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setTextColor(ContextCompat.getColor(context, R.color.brand_primary))
+            textSize = 15f
+        }
+        val amountText = TextView(requireContext()).apply {
+            text = formatCurrency(amount)
+            setTextColor(ContextCompat.getColor(context, R.color.text_secondary))
+            textSize = 15f
+        }
+        row.addView(nameText)
+        row.addView(amountText)
+        container.addView(row)
+    }
+
     private fun showAddBazaarDialog() {
         val amountInput = createAmountEditText()
 
@@ -130,80 +278,131 @@ class FinanceManagerDashboardFragment : Fragment() {
             .show()
     }
 
-    // Offers to bill this expense to one of the mess's currently open Special Meal
-    // Polls (SRS section 6) instead of the general mess fund - skipped entirely when
-    // there's nothing open to link to, so the common case (an ordinary daily bazaar
-    // trip) stays a single dialog like every other "add" flow on this screen.
-    //
-    // Deliberately title-only (no setMessage): AlertDialog.Builder silently drops
-    // setItems()'s list when setMessage() is also set, same reason
-    // showAddFixedBillDialog()'s "Select Bill Type" picker below is title-only too.
     private fun onBazaarAmountEntered(amount: Double) {
-        val openPolls = viewModel.uiState.value.openSpecialMealPolls
-        if (openPolls.isEmpty()) {
+        val polls = viewModel.uiState.value.openSpecialMealPolls
+        if (polls.isEmpty()) {
             viewModel.addBazaarEntry(amount)
             return
         }
 
-        val options = (listOf("General Mess Fund (default)") + openPolls.map { it.title }).toTypedArray()
+        val options = mutableListOf("General Fund (Default)")
+        options.addAll(polls.map { it.title })
+
         AlertDialog.Builder(requireContext())
-            .setTitle("Link to a Special Meal Poll?")
-            .setItems(options) { _, index ->
-                val linkedPollId = if (index == 0) null else openPolls[index - 1].pollId
-                viewModel.addBazaarEntry(amount, linkedPollId)
+            .setTitle("Link to Special Meal?")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    viewModel.addBazaarEntry(amount)
+                } else {
+                    viewModel.addBazaarEntry(amount, polls[which - 1].pollId)
+                }
             }
             .show()
     }
 
-    // Two simple dialogs in sequence: first pick the bill type, then enter the amount.
-    // This avoids needing a custom dialog layout with a Spinner.
-    private fun showAddFixedBillDialog() {
-        val billTypes = FixedBillType.entries.toTypedArray()
-        val billTypeNames = billTypes.map { it.name }.toTypedArray()
+    private fun showManageFixedCostsDialog() {
+        val fixedTypes = listOf(FixedBillType.RENT, FixedBillType.MAID, FixedBillType.WIFI, FixedBillType.GARBAGE, FixedBillType.WATER)
+        
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 20, 60, 20)
+        }
+
+        fixedTypes.forEach { type ->
+            val amount = viewModel.uiState.value.currentFixedBills[type] ?: 0.0
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 15, 0, 15)
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            
+            val label = TextView(requireContext()).apply {
+                text = "${type.name.lowercase(Locale.getDefault()).replaceFirstChar { it.titlecase() }}: ৳$amount"
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setTextColor(ContextCompat.getColor(context, R.color.brand_primary))
+                textSize = 16f
+            }
+            
+            val editBtn = TextView(requireContext()).apply {
+                text = "EDIT"
+                setTextColor(ContextCompat.getColor(context, R.color.brand_accent))
+                setPadding(20, 10, 10, 10)
+                textSize = 14f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setOnClickListener {
+                    showFixedBillAmountDialog(type)
+                }
+            }
+            
+            row.addView(label)
+            row.addView(editBtn)
+            container.addView(row)
+        }
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Select Bill Type")
-            .setItems(billTypeNames) { _, index ->
-                showFixedBillAmountDialog(billTypes[index])
+            .setTitle("Manage Fixed Costs")
+            .setView(container)
+            .setPositiveButton("Done", null)
+            .show()
+    }
+
+    private fun showAddRegularBillDialog() {
+        val regularTypes = listOf(FixedBillType.ELECTRICITY, FixedBillType.GAS)
+        val names = regularTypes.map { it.name.lowercase(Locale.getDefault()).replaceFirstChar { it.titlecase() } }.toTypedArray()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Add Regular Bill")
+            .setItems(names) { _, which ->
+                val type = regularTypes[which]
+                val amountInput = createAmountEditText()
+                
+                AlertDialog.Builder(requireContext())
+                    .setTitle("Enter ${type.name.lowercase(Locale.getDefault()).replaceFirstChar { it.titlecase() }} Amount")
+                    .setView(amountInput)
+                    .setPositiveButton("Add") { _, _ ->
+                        val amount = amountInput.text.toString().toDoubleOrNull()
+                        if (amount != null && amount > 0.0) {
+                            viewModel.setFixedBill(type, amount)
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             }
+            .setNegativeButton("Close", null)
             .show()
     }
 
     private fun showFixedBillAmountDialog(type: FixedBillType) {
         val amountInput = createAmountEditText()
+        val currentAmount = viewModel.uiState.value.currentFixedBills[type] ?: 0.0
+        amountInput.setText(currentAmount.toString())
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Add ${type.name} Bill")
-            .setMessage("Enter this month's amount")
+            .setTitle("Set ${type.name.lowercase(Locale.getDefault()).replaceFirstChar { it.titlecase() }} Amount")
             .setView(amountInput)
             .setPositiveButton("Save") { _, _ ->
                 val amount = amountInput.text.toString().toDoubleOrNull()
-                if (amount == null || amount <= 0.0) {
-                    Toast.makeText(requireContext(), "Enter a valid amount", Toast.LENGTH_SHORT).show()
-                } else {
-                    viewModel.addFixedBill(type, amount)
+                if (amount != null && amount >= 0.0) {
+                    viewModel.setFixedBill(type, amount)
+                    showManageFixedCostsDialog()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    // "Log Deposit" (SRS section 7): first pick which member handed over the money,
-    // then enter the amount - same two-dialogs-in-sequence shape as "Add Fixed Bill".
-    // Title-only picker for the same reason showAddFixedBillDialog()'s is: setItems()
-    // and setMessage() don't mix in AlertDialog.Builder.
     private fun showLogDepositDialog() {
         val members = viewModel.uiState.value.messMembers
         if (members.isEmpty()) {
-            Toast.makeText(requireContext(), "No members to log a deposit for yet", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "No members found", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val memberNames = members.map { it.name }.toTypedArray()
+        val names = members.map { it.name }.toTypedArray()
         AlertDialog.Builder(requireContext())
             .setTitle("Select Member")
-            .setItems(memberNames) { _, index ->
-                showDepositAmountDialog(members[index])
+            .setItems(names) { _, which ->
+                showDepositAmountDialog(members[which])
             }
             .show()
     }
@@ -212,62 +411,55 @@ class FinanceManagerDashboardFragment : Fragment() {
         val amountInput = createAmountEditText()
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Log Deposit for ${member.name}")
+            .setTitle("Deposit for ${member.name}")
             .setMessage("Enter the amount received")
             .setView(amountInput)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton("Log Deposit") { _, _ ->
                 val amount = amountInput.text.toString().toDoubleOrNull()
-                if (amount == null || amount <= 0.0) {
-                    Toast.makeText(requireContext(), "Enter a valid amount", Toast.LENGTH_SHORT).show()
-                } else {
+                if (amount != null && amount > 0.0) {
                     viewModel.logDeposit(member.uid, amount)
-                    Toast.makeText(requireContext(), "Deposit logged for ${member.name}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), "Deposit logged", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    // Confirms before running Close Month - it archives the month, settles every
-    // member's balance, and can reassign manager roles, none of which can be undone
-    // from this screen.
     private fun onCloseMonthTapped() {
+        val monthId = formatMonth(YearMonth.now().toString())
         AlertDialog.Builder(requireContext())
-            .setTitle("Close Month")
-            .setMessage(
-                "This archives this month's numbers, settles every member's balance, " +
-                    "hands the Manager roles to this month's election winners, and " +
-                    "starts a fresh month. This can't be undone."
-            )
-            .setPositiveButton("Close Month") { _, _ -> viewModel.closeMonth() }
+            .setTitle("Close $monthId?")
+            .setMessage("This will settle all member balances, archive this month's data, and move to the next month. This cannot be undone.")
+            .setPositiveButton("Close Month Now") { _, _ ->
+                viewModel.closeMonth()
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
     private fun renderCloseMonthState(state: CloseMonthState) {
         when (state) {
-            is CloseMonthState.Idle -> Unit
+            is CloseMonthState.Idle -> {
+                closeMonthProgressDialog?.dismiss()
+                closeMonthProgressDialog = null
+            }
             is CloseMonthState.Loading -> {
-                closeMonthProgressDialog = AlertDialog.Builder(requireContext())
-                    .setTitle("Closing the month…")
-                    .setMessage("Archiving data and handing over manager roles.")
-                    .setCancelable(false)
-                    .show()
+                if (closeMonthProgressDialog == null) {
+                    closeMonthProgressDialog = AlertDialog.Builder(requireContext())
+                        .setTitle("Closing Month...")
+                        .setMessage("Please wait while we calculate totals and settle balances.")
+                        .setCancelable(false)
+                        .show()
+                }
             }
             is CloseMonthState.Success -> {
                 closeMonthProgressDialog?.dismiss()
-                val handoverLine = if (state.newFinanceManagerName == null && state.newMealManagerName == null) {
-                    "No election was open, so the current managers stay in place."
-                } else {
-                    "New Finance Manager: ${state.newFinanceManagerName ?: "unchanged"}\n" +
-                        "New Meal Manager: ${state.newMealManagerName ?: "unchanged"}"
-                }
                 AlertDialog.Builder(requireContext())
-                    .setTitle("${formatMonth(state.closedMonthId)} closed")
-                    .setMessage(handoverLine)
-                    .setCancelable(false)
-                    .setPositiveButton("OK") { _, _ -> viewModel.resetCloseMonthState() }
+                    .setTitle("Month Closed!")
+                    .setMessage("Successfully archived ${formatMonth(state.closedMonthId)}.")
+                    .setPositiveButton("OK", null)
                     .show()
+                viewModel.resetCloseMonthState()
             }
             is CloseMonthState.Error -> {
                 closeMonthProgressDialog?.dismiss()
@@ -277,57 +469,31 @@ class FinanceManagerDashboardFragment : Fragment() {
         }
     }
 
-    // "2026-09" -> "September 2026". Falls back to the raw id if parsing ever fails
-    // (e.g. malformed data), so the screen degrades gracefully instead of crashing.
     private fun formatMonth(monthId: String): String = try {
         val yearMonth = YearMonth.parse(monthId)
-        "${yearMonth.month.getDisplayName(TextStyle.FULL, Locale.US)} ${yearMonth.year}"
+        val monthName = yearMonth.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.US)
+        "$monthName ${yearMonth.year}"
     } catch (e: Exception) {
         monthId
     }
 
-    // "Post Notice" (SRS section 9): a single multi-line message field, no custom
-    // dialog layout needed - same lightweight shape as every other "add" dialog here.
-    private fun showPostNoticeDialog() {
-        val messageInput = EditText(requireContext()).apply {
-            hint = "Notice message"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        }
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("Post Notice")
-            .setView(messageInput)
-            .setPositiveButton("Post") { _, _ ->
-                val message = messageInput.text.toString().trim()
-                if (message.isEmpty()) {
-                    Toast.makeText(requireContext(), "Enter a message", Toast.LENGTH_SHORT).show()
-                } else {
-                    viewModel.postNotice(message, message)
-                    Toast.makeText(requireContext(), "Notice posted", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
     private fun signOut() {
         authRepository.signOut()
-        findNavController().navigate(R.id.action_financeManagerDashboardFragment_to_loginFragment)
+        findNavController().safeNavigateToLogin()
     }
 
-    private fun createAmountEditText(): EditText =
-        EditText(requireContext()).apply {
+    private fun createAmountEditText(): EditText {
+        return EditText(requireContext()).apply {
+            hint = "0.00"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            hint = "Amount (৳)"
         }
+    }
 
     private fun formatCurrency(amount: Double): String =
         String.format(Locale.US, "৳ %,.2f", amount)
 
     override fun onDestroyView() {
         super.onDestroyView()
-        closeMonthProgressDialog?.dismiss()
-        closeMonthProgressDialog = null
         _binding = null
     }
 }

@@ -22,8 +22,10 @@ class SpecialMealPollRepository(
     // avoids by keeping its own filters to two simple equalities.
     // A single poll by id, regardless of its closed status - used by Close Month to
     // resolve a linked BazaarEntry's live participant list (SRS section 6).
-    suspend fun getPoll(pollId: String): SpecialMealPoll? =
-        specialMealPolls.document(pollId).get().await().toObject(SpecialMealPoll::class.java)
+    suspend fun getPoll(pollId: String): SpecialMealPoll? {
+        if (pollId.isNullOrBlank()) return null
+        return specialMealPolls.document(pollId).get().await().toObject(SpecialMealPoll::class.java)
+    }
 
     suspend fun getOpenPolls(messId: String): List<SpecialMealPoll> =
         specialMealPolls
@@ -53,10 +55,12 @@ class SpecialMealPollRepository(
     // already means "not eating" (SRS section 6: the cost is split only among members
     // who opted in, whether they voted early or joined in later).
     suspend fun optIn(pollId: String, uid: String) {
+        if (pollId.isNullOrBlank()) return
         specialMealPolls.document(pollId).update("optedInUserIds", FieldValue.arrayUnion(uid)).await()
     }
 
     suspend fun optOut(pollId: String, uid: String) {
+        if (pollId.isNullOrBlank()) return
         specialMealPolls.document(pollId).update("optedInUserIds", FieldValue.arrayRemove(uid)).await()
     }
 }
